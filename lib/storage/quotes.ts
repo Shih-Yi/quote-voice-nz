@@ -7,12 +7,7 @@ import {
   getQuoteBySlugFromSupabase,
   getQuoteByIdFromSupabase,
 } from "@/lib/supabase/quotes";
-import {
-  generateOwnerToken,
-  saveOwnerToken,
-  getOwnerToken,
-  removeOwnerToken,
-} from "./ownerTokens";
+import { getDeviceToken } from "./deviceToken";
 
 const QUOTES_KEY = "ksq_quotes";
 
@@ -36,8 +31,6 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   const quotes = await getAllQuotes();
   const index = quotes.findIndex((q) => q.id === id);
 
-  // Simple conflict resolution: Cloud wins if it exists
-  // In a real app, we'd check timestamps: new Date(cloudQuote.updatedAt) > new Date(local.updatedAt)
   if (index >= 0) {
     quotes[index] = cloudQuote;
   } else {
@@ -62,9 +55,9 @@ export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
 }
 
 // Save NEW quote - local first, then sync to Supabase
-export async function saveQuote(quote: Quote): Promise<{ synced: boolean; ownerToken: string }> {
-  // Generate owner token for new quote
-  const ownerToken = generateOwnerToken();
+export async function saveQuote(quote: Quote): Promise<{ synced: boolean }> {
+  // Get device token (same for all quotes on this device)
+  const deviceToken = await getDeviceToken();
 
   // 1. Save locally first (offline-first)
   const quotes = await getAllQuotes();
@@ -72,17 +65,20 @@ export async function saveQuote(quote: Quote): Promise<{ synced: boolean; ownerT
   quotes.push(updatedQuote);
   await set(QUOTES_KEY, quotes);
 
-  // 2. Save owner token locally
-  await saveOwnerToken(quote.id, ownerToken);
+  // 2. Try to sync to Supabase (non-blocking)
+  const result = await saveQuoteToSupabase(updatedQuote, deviceToken);
 
-  // 3. Try to sync to Supabase (non-blocking)
-  const result = await saveQuoteToSupabase(updatedQuote, ownerToken);
-
-  return { synced: result.success, ownerToken };
+  return { synced: result.success };
 }
 
 // Update EXISTING quote - local first, then sync to Supabase
-export async function updateQuote(quote: Quote): Promise<{ synced: boolean }> {
+// Note: Only works for "draft" status quotes
+export async function updateQuote(quote: Quote): Promise<{ synced: boolean; error?: string }> {
+  // Check if quote is locked (sent/accepted)
+  if (quote.status !== "draft") {
+    return { synced: false, error: "Cannot edit sent quotes. Please duplicate instead." };
+  }
+
   // 1. Update locally
   const quotes = await getAllQuotes();
   const existingIndex = quotes.findIndex((q) => q.id === quote.id);
@@ -97,14 +93,61 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean }> {
 
   await set(QUOTES_KEY, quotes);
 
-  // 2. Get owner token and sync to Supabase
-  const ownerToken = await getOwnerToken(quote.id);
-  if (ownerToken) {
-    const result = await updateQuoteInSupabase(updatedQuote, ownerToken);
-    return { synced: result.success };
+  // 2. Get device token and sync to Supabase
+  const deviceToken = await getDeviceToken();
+  const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
+
+  return { synced: result.success, error: result.error };
+}
+
+// Mark quote as sent (locks the quote)
+export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolean }> {
+  const quotes = await getAllQuotes();
+  const index = quotes.findIndex((q) => q.id === quoteId);
+
+  if (index < 0) {
+    return { synced: false };
   }
 
-  return { synced: false };
+  const updatedQuote = {
+    ...quotes[index],
+    status: "sent" as const,
+    updatedAt: new Date().toISOString(),
+  };
+
+  quotes[index] = updatedQuote;
+  await set(QUOTES_KEY, quotes);
+
+  // Sync to Supabase
+  const deviceToken = await getDeviceToken();
+  const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
+
+  return { synced: result.success };
+}
+
+// Duplicate a quote (for editing sent quotes)
+export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
+  const quotes = await getAllQuotes();
+  const original = quotes.find((q) => q.id === quoteId);
+
+  if (!original) {
+    return null;
+  }
+
+  // Create new quote with new ID and slug
+  const newQuote: Quote = {
+    ...original,
+    id: crypto.randomUUID(),
+    slug: await generateSlug(),
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Save the duplicate
+  await saveQuote(newQuote);
+
+  return newQuote;
 }
 
 // Delete quote - local and Supabase
@@ -114,12 +157,9 @@ export async function deleteQuote(id: string): Promise<void> {
   const filtered = quotes.filter((q) => q.id !== id);
   await set(QUOTES_KEY, filtered);
 
-  // Get owner token and try to delete from Supabase
-  const ownerToken = await getOwnerToken(id);
-  if (ownerToken) {
-    await deleteQuoteFromSupabase(id, ownerToken);
-    await removeOwnerToken(id);
-  }
+  // Get device token and try to delete from Supabase
+  const deviceToken = await getDeviceToken();
+  await deleteQuoteFromSupabase(id, deviceToken);
 }
 
 // Get recent quotes (local)
@@ -140,8 +180,8 @@ export async function generateSlug(): Promise<string> {
   return slug;
 }
 
-// Check if current user owns a quote
-export async function isOwner(quoteId: string): Promise<boolean> {
-  const token = await getOwnerToken(quoteId);
-  return Boolean(token);
+// Count quotes on this device
+export async function countLocalQuotes(): Promise<number> {
+  const quotes = await getAllQuotes();
+  return quotes.length;
 }

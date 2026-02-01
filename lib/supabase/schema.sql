@@ -149,36 +149,11 @@ END;
 $$;
 
 -- ============================================
--- FUNCTION: Bind quote to user after registration
+-- FUNCTION: Bind all quotes from device to user (single token)
+-- Called after user registers/logs in
 -- ============================================
-CREATE OR REPLACE FUNCTION api.bind_quote_to_user(
-  p_owner_token TEXT,
-  p_user_id UUID
-)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  v_updated INTEGER;
-BEGIN
-  UPDATE api.quotes
-  SET user_id = p_user_id,
-      updated_at = NOW()
-  WHERE owner_token = p_owner_token
-    AND user_id IS NULL;
-
-  GET DIAGNOSTICS v_updated = ROW_COUNT;
-
-  RETURN v_updated > 0;
-END;
-$$;
-
--- ============================================
--- FUNCTION: Bind multiple quotes to user (batch)
--- ============================================
-CREATE OR REPLACE FUNCTION api.bind_quotes_to_user(
-  p_owner_tokens TEXT[],
+CREATE OR REPLACE FUNCTION api.bind_device_quotes_to_user(
+  p_device_token TEXT,
   p_user_id UUID
 )
 RETURNS INTEGER
@@ -188,15 +163,58 @@ AS $$
 DECLARE
   v_updated INTEGER;
 BEGIN
+  -- Bind all quotes with this device token to the user
   UPDATE api.quotes
   SET user_id = p_user_id,
       updated_at = NOW()
-  WHERE owner_token = ANY(p_owner_tokens)
+  WHERE owner_token = p_device_token
     AND user_id IS NULL;
 
   GET DIAGNOSTICS v_updated = ROW_COUNT;
 
   RETURN v_updated;
+END;
+$$;
+
+-- ============================================
+-- FUNCTION: Count quotes by device token
+-- For showing "This device has X quotes" prompt
+-- ============================================
+CREATE OR REPLACE FUNCTION api.count_device_quotes(
+  p_device_token TEXT
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO v_count
+  FROM api.quotes
+  WHERE owner_token = p_device_token;
+
+  RETURN v_count;
+END;
+$$;
+
+-- ============================================
+-- FUNCTION: Get quotes by device token
+-- For listing user's quotes before login
+-- ============================================
+CREATE OR REPLACE FUNCTION api.get_device_quotes(
+  p_device_token TEXT
+)
+RETURNS SETOF api.quotes
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT *
+  FROM api.quotes
+  WHERE owner_token = p_device_token
+  ORDER BY created_at DESC;
 END;
 $$;
 

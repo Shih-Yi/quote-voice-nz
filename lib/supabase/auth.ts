@@ -106,38 +106,6 @@ export async function signOut(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
-// Bind quotes to user after registration/login
-export async function bindQuotesToUser(
-  ownerTokens: string[],
-  userId: string
-): Promise<{ count: number; error: string | null }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { count: 0, error: "Supabase not configured" };
-  }
-
-  if (ownerTokens.length === 0) {
-    return { count: 0, error: null };
-  }
-
-  try {
-    const { data, error } = await supabase.rpc("bind_quotes_to_user", {
-      p_owner_tokens: ownerTokens,
-      p_user_id: userId,
-    });
-
-    if (error) {
-      console.error("Bind quotes error:", error);
-      return { count: 0, error: error.message };
-    }
-
-    return { count: data || 0, error: null };
-  } catch (err) {
-    console.error("Bind quotes exception:", err);
-    return { count: 0, error: "Failed to bind quotes" };
-  }
-}
-
 // Listen for auth state changes
 export function onAuthStateChange(
   callback: (user: User | null) => void

@@ -9,9 +9,9 @@ import {
   signInWithGoogle,
   signOut,
   onAuthStateChange,
-  bindQuotesToUser,
 } from "@/lib/supabase/auth";
-import { getAllOwnerTokens } from "@/lib/storage/ownerTokens";
+import { getDeviceToken } from "@/lib/storage/deviceToken";
+import { bindDeviceQuotesToUser } from "@/lib/supabase/quotes";
 
 interface AuthContextType {
   user: User | null;
@@ -28,15 +28,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Bind all local quotes (by owner tokens) to the user
+  // Bind all device quotes to the user (single device token)
   const bindLocalQuotesToUser = useCallback(async (userId: string) => {
     try {
-      const ownerTokens = await getAllOwnerTokens();
-      if (ownerTokens.length > 0) {
-        const result = await bindQuotesToUser(ownerTokens, userId);
-        if (result.count > 0) {
-          console.log(`Bound ${result.count} quotes to user`);
-        }
+      const deviceToken = await getDeviceToken();
+      const result = await bindDeviceQuotesToUser(deviceToken, userId);
+      if (result.count > 0) {
+        console.log(`Bound ${result.count} quotes to user`);
       }
     } catch (err) {
       console.error("Failed to bind quotes:", err);
