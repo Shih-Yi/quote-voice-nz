@@ -9,8 +9,11 @@ import { QuoteForm } from "@/components/quote/QuoteForm";
 import { QuotePreview } from "@/components/quote/QuotePreview";
 import { QuotePDF } from "@/components/quote/QuotePDF";
 import { QuoteShare } from "@/components/quote/QuoteShare";
+import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
+import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { getQuoteById, saveQuote, deleteQuote } from "@/lib/storage/quotes";
+import { useAuth } from "@/hooks/useAuth";
 import type { Quote } from "@/types/quote";
 
 interface PageProps {
@@ -24,6 +27,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const { user, signUp, signIn, signInGoogle } = useAuth();
 
   useEffect(() => {
     async function loadQuote() {
@@ -197,6 +202,20 @@ export default function QuoteEditorPage({ params }: PageProps) {
             </Button>
           </div>
         </div>
+
+        {/* Registration Prompt - Show only for non-logged-in users */}
+        {!user && (
+          <RegisterPrompt onRegisterClick={() => setShowAuthModal(true)} />
+        )}
+
+        {/* Auth Modal */}
+        <AuthModal
+          open={showAuthModal}
+          onOpenChange={setShowAuthModal}
+          onSignUp={signUp}
+          onSignIn={signIn}
+          onSignInGoogle={signInGoogle}
+        />
 
         {/* Content */}
         {isEditing ? (

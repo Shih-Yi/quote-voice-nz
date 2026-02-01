@@ -8,6 +8,8 @@ export interface LineItem {
 
 export interface Quote {
   id: string;
+  slug?: string;
+  ownerToken?: string;  // Secret token for edit/delete (only stored locally)
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -21,7 +23,6 @@ export interface Quote {
   status: "draft" | "sent" | "accepted";
   createdAt: string;
   updatedAt: string;
-  slug?: string;
 }
 
 export interface PendingAudio {

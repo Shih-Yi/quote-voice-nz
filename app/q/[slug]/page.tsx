@@ -2,13 +2,15 @@
 
 import { useEffect, useState, use } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { QuoteItem } from "@/components/quote/QuoteItem";
 import { QuotePDF } from "@/components/quote/QuotePDF";
+import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
+import { AuthModal } from "@/components/auth/AuthModal";
 import { getQuoteBySlug } from "@/lib/storage/quotes";
 import { formatNZD } from "@/lib/utils/currency";
 import { formatNZDate } from "@/lib/utils/date";
+import { useAuth } from "@/hooks/useAuth";
 import type { Quote } from "@/types/quote";
 
 interface PageProps {
@@ -19,6 +21,8 @@ export default function PublicQuotePage({ params }: PageProps) {
   const resolvedParams = use(params);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const { user, signUp, signIn, signInGoogle } = useAuth();
 
   useEffect(() => {
     async function loadQuote() {
@@ -78,6 +82,20 @@ export default function PublicQuotePage({ params }: PageProps) {
           </div>
           <QuotePDF quote={quote} />
         </div>
+
+        {/* Registration Prompt - Show only for non-logged-in users */}
+        {!user && (
+          <RegisterPrompt onRegisterClick={() => setShowAuthModal(true)} />
+        )}
+
+        {/* Auth Modal */}
+        <AuthModal
+          open={showAuthModal}
+          onOpenChange={setShowAuthModal}
+          onSignUp={signUp}
+          onSignIn={signIn}
+          onSignInGoogle={signInGoogle}
+        />
 
         {/* Quote Content */}
         <div id="quote-preview" className="space-y-4">

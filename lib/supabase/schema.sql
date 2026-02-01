@@ -1,0 +1,180 @@
+-- KiwiSpeakQuote Database Schema
+-- Run this in Supabase SQL Editor
+
+-- ⚠️  FOR "Dedicated API Schema" SETUP
+-- If you chose "Use public schema" instead, replace all `api.` with `public.`
+
+-- ============================================
+-- QUOTES TABLE
+-- ============================================
+CREATE TABLE IF NOT EXISTS api.quotes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT UNIQUE NOT NULL,
+  owner_token TEXT NOT NULL,  -- For anonymous edit/delete (before registration)
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,  -- Linked user (after registration)
+
+  -- Customer info
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT,
+  customer_email TEXT,
+  customer_address TEXT,
+
+  -- Quote content
+  items JSONB NOT NULL DEFAULT '[]',
+  notes TEXT,
+
+  -- Pricing (NZD)
+  gst_inclusive BOOLEAN DEFAULT FALSE,
+  subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  gst NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  total NUMERIC(10, 2) NOT NULL DEFAULT 0,
+
+  -- Status
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'accepted')),
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_quotes_slug ON api.quotes(slug);
+CREATE INDEX IF NOT EXISTS idx_quotes_owner_token ON api.quotes(owner_token);
+CREATE INDEX IF NOT EXISTS idx_quotes_user_id ON api.quotes(user_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON api.quotes(created_at DESC);
+
+-- ============================================
+-- ROW LEVEL SECURITY POLICIES
+-- ============================================
+ALTER TABLE api.quotes ENABLE ROW LEVEL SECURITY;
+
+-- Anyone can VIEW quotes (for public sharing via slug)
+CREATE POLICY "quotes_public_read"
+  ON api.quotes FOR SELECT
+  USING (true);
+
+-- Anyone can INSERT (anonymous users create quotes)
+CREATE POLICY "quotes_insert"
+  ON api.quotes FOR INSERT
+  WITH CHECK (true);
+
+-- UPDATE: owner_token OR authenticated user who owns it
+CREATE POLICY "quotes_update"
+  ON api.quotes FOR UPDATE
+  USING (
+    -- Anonymous: must have owner_token (checked in WHERE clause)
+    -- Authenticated: must own the quote
+    (auth.uid() IS NOT NULL AND user_id = auth.uid())
+    OR
+    (auth.uid() IS NULL)  -- Anonymous users filtered by owner_token in query
+  )
+  WITH CHECK (true);
+
+-- DELETE: same as UPDATE
+CREATE POLICY "quotes_delete"
+  ON api.quotes FOR DELETE
+  USING (
+    (auth.uid() IS NOT NULL AND user_id = auth.uid())
+    OR
+    (auth.uid() IS NULL)
+  );
+
+-- ============================================
+-- FUNCTION: Bind quote to user after registration
+-- ============================================
+CREATE OR REPLACE FUNCTION api.bind_quote_to_user(
+  p_owner_token TEXT,
+  p_user_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_updated INTEGER;
+BEGIN
+  -- Update quote where owner_token matches and user_id is NULL
+  UPDATE api.quotes
+  SET user_id = p_user_id,
+      updated_at = NOW()
+  WHERE owner_token = p_owner_token
+    AND user_id IS NULL;
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+  RETURN v_updated > 0;
+END;
+$$;
+
+-- ============================================
+-- FUNCTION: Bind multiple quotes to user (batch)
+-- ============================================
+CREATE OR REPLACE FUNCTION api.bind_quotes_to_user(
+  p_owner_tokens TEXT[],
+  p_user_id UUID
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_updated INTEGER;
+BEGIN
+  UPDATE api.quotes
+  SET user_id = p_user_id,
+      updated_at = NOW()
+  WHERE owner_token = ANY(p_owner_tokens)
+    AND user_id IS NULL;
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+  RETURN v_updated;
+END;
+$$;
+
+-- ============================================
+-- AUTO-UPDATE TIMESTAMP TRIGGER
+-- ============================================
+CREATE OR REPLACE FUNCTION api.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS quotes_updated_at ON api.quotes;
+CREATE TRIGGER quotes_updated_at
+  BEFORE UPDATE ON api.quotes
+  FOR EACH ROW
+  EXECUTE FUNCTION api.update_updated_at_column();
+
+-- ============================================
+-- USER PROFILES TABLE (optional, for future use)
+-- ============================================
+CREATE TABLE IF NOT EXISTS api.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  business_name TEXT,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  bank_account TEXT,  -- NZ format: XX-XXXX-XXXXXXX-XX
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE api.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Users can only read/update their own profile
+CREATE POLICY "profiles_select_own"
+  ON api.profiles FOR SELECT
+  USING (auth.uid() = id);
+
+CREATE POLICY "profiles_insert_own"
+  ON api.profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "profiles_update_own"
+  ON api.profiles FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
