@@ -10,7 +10,7 @@ import { Footer } from "@/components/layout/Footer";
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg-white flex flex-col font-sans">
-      <Header showLogin maxWidth="max-w-5xl" />
+      <Header maxWidth="max-w-5xl" />
 
       <main className="flex-1">
         {/* Hero Section */}
