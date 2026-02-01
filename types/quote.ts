@@ -1,0 +1,47 @@
+export interface LineItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Quote {
+  id: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  items: LineItem[];
+  notes?: string;
+  gstInclusive: boolean;
+  subtotal: number;
+  gst: number;
+  total: number;
+  status: "draft" | "sent" | "accepted";
+  createdAt: string;
+  updatedAt: string;
+  slug?: string;
+}
+
+export interface PendingAudio {
+  id: string;
+  blob: Blob;
+  createdAt: string;
+  retryCount: number;
+}
+
+export interface TranscriptionResult {
+  text: string;
+  confidence?: number;
+}
+
+export interface ExtractionResult {
+  customerName: string | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  customerAddress: string | null;
+  items: Omit<LineItem, "id" | "total">[];
+  notes: string | null;
+  confidence: number;
+}
