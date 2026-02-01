@@ -116,7 +116,7 @@ export async function saveQuoteToSupabase(
   }
 }
 
-// Update quote in Supabase (requires owner_token)
+// Update quote in Supabase (requires owner_token or authenticated user)
 // Note: subtotal, gst, total are GENERATED columns - don't send them
 export async function updateQuoteInSupabase(
   quote: Quote,
@@ -131,89 +131,58 @@ export async function updateQuoteInSupabase(
   const itemsSum = quote.items.reduce((sum, item) => sum + item.total, 0);
 
   try {
-    const { error } = await supabase
-      .from("quotes")
-      .update({
-        customer_name: quote.customerName,
-        customer_phone: quote.customerPhone || null,
-        customer_email: quote.customerEmail || null,
-        customer_address: quote.customerAddress || null,
-        items: quote.items.map((item) => ({
-          id: item.id,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          total: item.total,
-        })),
-        notes: quote.notes || null,
-        gst_inclusive: quote.gstInclusive,
-        items_sum: itemsSum,  // Only send items_sum, DB calculates subtotal/gst/total
-        status: quote.status,
-      })
-      .eq("id", quote.id)
-      .eq("owner_token", ownerToken);  // Security: only owner can update
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error("Supabase update error:", error);
-      return { success: false, error: error.message };
+    // Prepare data
+    const updateData = {
+      customer_name: quote.customerName,
+      customer_phone: quote.customerPhone || null,
+      customer_email: quote.customerEmail || null,
+      customer_address: quote.customerAddress || null,
+      items: quote.items.map((item) => ({
+        id: item.id,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        total: item.total,
+      })),
+      notes: quote.notes || null,
+      gst_inclusive: quote.gstInclusive,
+      items_sum: itemsSum,
+      status: quote.status,
+    };
+
+    if (user) {
+      // Authenticated: Use standard RLS update
+      const { error } = await supabase
+        .from("quotes")
+        .update(updateData)
+        .eq("id", quote.id); // RLS checks user_id
+
+      if (error) throw error;
+    } else {
+      // Anonymous: Use secure RPC
+      const { data: success, error } = await supabase.rpc("update_quote_anon", {
+        p_id: quote.id,
+        p_token: ownerToken,
+        p_payload: updateData,
+      });
+
+      if (error) throw error;
+      if (!success) return { success: false, error: "Quote not found or access denied" };
     }
 
     return { success: true };
   } catch (err) {
     console.error("Supabase update exception:", err);
-    return { success: false, error: "Failed to update in cloud" };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { success: false, error: (err as any).message || "Failed to update in cloud" };
   }
 }
 
-// Get quote by slug from Supabase (for public sharing - no owner_token needed)
-export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | null> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return null;
-  }
+// ...
 
-  try {
-    const { data, error } = await supabase
-      .from("quotes")
-      .select("*")
-      .eq("slug", slug)
-      .single();
-
-    if (error || !data) {
-      return null;
-    }
-
-    return fromSupabaseFormat(data as SupabaseQuoteRow);
-  } catch {
-    return null;
-  }
-}
-
-// Get quote by ID from Supabase
-export async function getQuoteByIdFromSupabase(id: string): Promise<Quote | null> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return null;
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from("quotes")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (error || !data) {
-      return null;
-    }
-
-    return fromSupabaseFormat(data as SupabaseQuoteRow);
-  } catch {
-    return null;
-  }
-}
-
-// Delete quote from Supabase (requires owner_token)
+// Delete quote from Supabase (requires owner_token or authenticated user)
 export async function deleteQuoteFromSupabase(
   id: string,
   ownerToken: string
@@ -224,18 +193,29 @@ export async function deleteQuoteFromSupabase(
   }
 
   try {
-    const { error } = await supabase
-      .from("quotes")
-      .delete()
-      .eq("id", id)
-      .eq("owner_token", ownerToken);  // Security: only owner can delete
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (error) {
-      return { success: false, error: error.message };
+    if (user) {
+      // Authenticated: Use standard RLS delete
+      const { error } = await supabase
+        .from("quotes")
+        .delete()
+        .eq("id", id); // RLS checks user_id
+
+      if (error) throw error;
+    } else {
+      // Anonymous: Use secure RPC
+      const { data: success, error } = await supabase.rpc("delete_quote_anon", {
+        p_id: id,
+        p_token: ownerToken,
+      });
+
+      if (error) throw error;
+      if (!success) return { success: false, error: "Quote not found or access denied" };
     }
 
     return { success: true };
-  } catch {
+  } catch (err) {
     return { success: false, error: "Failed to delete from cloud" };
   }
 }

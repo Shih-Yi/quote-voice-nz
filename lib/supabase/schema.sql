@@ -87,26 +87,66 @@ CREATE POLICY "quotes_insert"
   ON api.quotes FOR INSERT
   WITH CHECK (true);
 
--- UPDATE: owner_token OR authenticated user who owns it
+-- UPDATE: Authenticated user who owns it
 CREATE POLICY "quotes_update"
   ON api.quotes FOR UPDATE
-  USING (
-    -- Anonymous: must have owner_token (checked in WHERE clause)
-    -- Authenticated: must own the quote
-    (auth.uid() IS NOT NULL AND user_id = auth.uid())
-    OR
-    (auth.uid() IS NULL)  -- Anonymous users filtered by owner_token in query
-  )
-  WITH CHECK (true);
+  USING (auth.uid() IS NOT NULL AND user_id = auth.uid())
+  WITH CHECK (auth.uid() IS NOT NULL AND user_id = auth.uid());
 
--- DELETE: same as UPDATE
+-- DELETE: Authenticated user who owns it
 CREATE POLICY "quotes_delete"
   ON api.quotes FOR DELETE
-  USING (
-    (auth.uid() IS NOT NULL AND user_id = auth.uid())
-    OR
-    (auth.uid() IS NULL)
-  );
+  USING (auth.uid() IS NOT NULL AND user_id = auth.uid());
+
+-- ============================================
+-- SECURE ANONYMOUS OPERATIONS (RPC)
+-- ============================================
+
+-- Secure Update: Requires matching owner_token
+CREATE OR REPLACE FUNCTION api.update_quote_anon(
+  p_id UUID,
+  p_token TEXT,
+  p_payload JSONB
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE api.quotes
+  SET 
+    customer_name = (p_payload->>'customer_name'),
+    customer_phone = (p_payload->>'customer_phone'),
+    customer_email = (p_payload->>'customer_email'),
+    customer_address = (p_payload->>'customer_address'),
+    items = (p_payload->'items'),
+    notes = (p_payload->>'notes'),
+    gst_inclusive = (p_payload->>'gst_inclusive')::boolean,
+    items_sum = (p_payload->>'items_sum')::numeric,
+    status = (p_payload->>'status'),
+    updated_at = NOW()
+  WHERE id = p_id AND owner_token = p_token;
+
+  RETURN FOUND;
+END;
+$$;
+
+-- Secure Delete: Requires matching owner_token
+CREATE OR REPLACE FUNCTION api.delete_quote_anon(
+  p_id UUID,
+  p_token TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM api.quotes
+  WHERE id = p_id AND owner_token = p_token;
+
+  RETURN FOUND;
+END;
+$$;
 
 -- ============================================
 -- FUNCTION: Bind quote to user after registration
