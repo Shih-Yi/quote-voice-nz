@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uipro init:*)",
+      "Bash(npm ls:*)",
+      "Bash(wc:*)",
+      "Bash(tree:*)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 15 npm run dev)"
+    ]
+  }
+}
