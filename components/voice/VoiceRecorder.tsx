@@ -103,7 +103,7 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          total: item.quantity * item.unitPrice,
+          total: Number((item.quantity * item.unitPrice).toFixed(2)),
         }));
 
         const { subtotal, gst, total } = calculateQuoteTotals(items, false);

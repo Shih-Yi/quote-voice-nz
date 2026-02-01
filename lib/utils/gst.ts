@@ -34,8 +34,9 @@ export function calculateQuoteTotals(
   items: { quantity: number; unitPrice: number }[],
   gstInclusive: boolean
 ): { subtotal: number; gst: number; total: number } {
+  // Round each line item to 2 decimal places before summing
   const itemsTotal = items.reduce(
-    (sum, item) => sum + item.quantity * item.unitPrice,
+    (sum, item) => sum + roundToTwo(item.quantity * item.unitPrice),
     0
   );
 

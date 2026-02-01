@@ -23,11 +23,11 @@ export function QuoteItem({ item, editable = false, onUpdate, onDelete }: QuoteI
     } else if (field === "quantity") {
       const qty = Math.max(0, parseFloat(value as string) || 0);
       updated.quantity = qty;
-      updated.total = qty * updated.unitPrice;
+      updated.total = Number((qty * updated.unitPrice).toFixed(2));
     } else if (field === "unitPrice") {
       const price = Math.max(0, parseFloat(value as string) || 0);
       updated.unitPrice = price;
-      updated.total = updated.quantity * price;
+      updated.total = Number((updated.quantity * price).toFixed(2));
     }
 
     onUpdate(updated);
