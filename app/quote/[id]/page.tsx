@@ -12,7 +12,7 @@ import { QuoteShare } from "@/components/quote/QuoteShare";
 import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
-import { getQuoteById, saveQuote, deleteQuote } from "@/lib/storage/quotes";
+import { getQuoteById, saveQuote, deleteQuote, refreshQuoteFromCloud } from "@/lib/storage/quotes";
 import { useAuth } from "@/hooks/useAuth";
 import type { Quote } from "@/types/quote";
 
@@ -33,7 +33,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
   useEffect(() => {
     async function loadQuote() {
       try {
-        const data = await getQuoteById(resolvedParams.id);
+        const id = resolvedParams.id;
+        const data = await getQuoteById(id);
         if (data) {
           setQuote(data);
           // Auto-edit mode for drafts
@@ -41,6 +42,21 @@ export default function QuoteEditorPage({ params }: PageProps) {
             setIsEditing(true);
           }
         }
+
+        // Background Refresh from Cloud
+        try {
+          const cloudData = await refreshQuoteFromCloud(id);
+          if (cloudData) {
+            // If local doesn't exist OR cloud is newer
+            if (!data || new Date(cloudData.updatedAt) > new Date(data.updatedAt)) {
+              setQuote(cloudData);
+              toast.info("Quote updated from cloud");
+            }
+          }
+        } catch (e) {
+          console.error("Cloud sync check failed", e);
+        }
+
       } catch (error) {
         console.error("Failed to load quote:", error);
         toast.error("Failed to load quote");

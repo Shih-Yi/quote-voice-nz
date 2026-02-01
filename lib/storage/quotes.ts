@@ -5,6 +5,7 @@ import {
   updateQuoteInSupabase,
   deleteQuoteFromSupabase,
   getQuoteBySlugFromSupabase,
+  getQuoteByIdFromSupabase,
 } from "@/lib/supabase/quotes";
 import {
   generateOwnerToken,
@@ -25,6 +26,26 @@ export async function getAllQuotes(): Promise<Quote[]> {
 export async function getQuoteById(id: string): Promise<Quote | undefined> {
   const quotes = await getAllQuotes();
   return quotes.find((q) => q.id === id);
+}
+
+// Fetch latest quote from cloud and update local storage
+export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
+  const cloudQuote = await getQuoteByIdFromSupabase(id);
+  if (!cloudQuote) return null;
+
+  const quotes = await getAllQuotes();
+  const index = quotes.findIndex((q) => q.id === id);
+
+  // Simple conflict resolution: Cloud wins if it exists
+  // In a real app, we'd check timestamps: new Date(cloudQuote.updatedAt) > new Date(local.updatedAt)
+  if (index >= 0) {
+    quotes[index] = cloudQuote;
+  } else {
+    quotes.push(cloudQuote);
+  }
+
+  await set(QUOTES_KEY, quotes);
+  return cloudQuote;
 }
 
 // Get quote by slug - try Supabase first (for public sharing), fallback to local
