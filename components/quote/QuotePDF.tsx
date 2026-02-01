@@ -39,26 +39,55 @@ export function QuotePDF({ quote }: QuotePDFProps) {
       // ============================================
       // HEADER with KQ Logo
       // ============================================
+      const profile = quote.ownerProfile;
+      const businessName = profile?.businessName || "KiwiSpeakQuote";
+      const initials = businessName.substring(0, 2).toUpperCase();
+
       // Logo background
       pdf.setFillColor(...primaryColor);
       pdf.roundedRect(margin, y, 15, 15, 2, 2, "F");
 
-      // Logo text "KQ"
+      // Logo text
       pdf.setTextColor(255, 255, 255);
       pdf.setFontSize(10);
       pdf.setFont("helvetica", "bold");
-      pdf.text("KQ", margin + 7.5, y + 9.5, { align: "center" });
+      pdf.text(initials, margin + 7.5, y + 9.5, { align: "center" });
 
-      // Company name
+      // Company Info
+      const infoX = margin + 20;
+      let infoY = y + 6;
+
       pdf.setTextColor(...textColor);
       pdf.setFontSize(14);
       pdf.setFont("helvetica", "bold");
-      pdf.text("KiwiSpeakQuote", margin + 20, y + 6);
+      pdf.text(businessName, infoX, infoY);
 
+      infoY += 5;
       pdf.setTextColor(...mutedColor);
-      pdf.setFontSize(10);
+      pdf.setFontSize(9);
       pdf.setFont("helvetica", "normal");
-      pdf.text("Quote", margin + 20, y + 12);
+
+      if (profile) {
+        if (profile.address) {
+          pdf.text(profile.address, infoX, infoY);
+          infoY += 4;
+        }
+        if (profile.phone) {
+          pdf.text(profile.phone, infoX, infoY);
+          infoY += 4;
+        }
+        if (profile.email) {
+          pdf.text(profile.email, infoX, infoY);
+          infoY += 4;
+        }
+        if (profile.bankAccount) {
+          infoY += 2;
+          pdf.setFont("helvetica", "bold");
+          pdf.text(`Bank: ${profile.bankAccount}`, infoX, infoY);
+        }
+      } else {
+        pdf.text("Quote", infoX, infoY);
+      }
 
       // "QUOTE" title on right
       pdf.setTextColor(...primaryColor);
@@ -66,7 +95,7 @@ export function QuotePDF({ quote }: QuotePDFProps) {
       pdf.setFont("helvetica", "bold");
       pdf.text("QUOTE", pageWidth - margin, y + 10, { align: "right" });
 
-      y += 25;
+      y += Math.max(25, (infoY - y) + 10); // Ensure enough space if info is long
 
       // Date
       pdf.setTextColor(...mutedColor);

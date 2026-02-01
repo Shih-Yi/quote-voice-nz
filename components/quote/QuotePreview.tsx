@@ -34,6 +34,28 @@ export function QuotePreview({ quote, showHeader = true }: QuotePreviewProps) {
         </div>
       )}
 
+      {/* From (Tradie Info) */}
+      {quote.ownerProfile && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-text-muted">From</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="font-semibold text-text text-lg">{quote.ownerProfile.businessName}</p>
+            <div className="text-sm text-text-muted space-y-1 mt-1">
+              {quote.ownerProfile.address && <p>{quote.ownerProfile.address}</p>}
+              {quote.ownerProfile.phone && <p>{quote.ownerProfile.phone}</p>}
+              {quote.ownerProfile.email && <p>{quote.ownerProfile.email}</p>}
+              {quote.ownerProfile.bankAccount && (
+                <p className="font-medium text-text mt-2">
+                  Bank: {quote.ownerProfile.bankAccount}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Customer Info */}
       <Card>
         <CardHeader className="pb-2">
