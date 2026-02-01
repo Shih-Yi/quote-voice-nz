@@ -233,10 +233,10 @@ CREATE TABLE IF NOT EXISTS api.profiles (
 
 ALTER TABLE api.profiles ENABLE ROW LEVEL SECURITY;
 
--- Users can only read/update their own profile
-CREATE POLICY "profiles_select_own"
+-- Allow public read access (so customers can see business info on quotes)
+CREATE POLICY "profiles_read_public"
   ON api.profiles FOR SELECT
-  USING (auth.uid() = id);
+  USING (true);
 
 CREATE POLICY "profiles_insert_own"
   ON api.profiles FOR INSERT
