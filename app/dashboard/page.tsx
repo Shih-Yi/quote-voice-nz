@@ -6,24 +6,26 @@ import { toast } from "sonner";
 import { MobileShell } from "@/components/layout/MobileShell";
 import { VoiceRecorder } from "@/components/voice/VoiceRecorder";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getRecentQuotes } from "@/lib/storage/quotes";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
-import { formatNZD } from "@/lib/utils/currency";
-import { formatRelativeTime } from "@/lib/utils/date";
+import { QuoteListItem } from "@/components/quote/QuoteListItem";
+import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
 import type { Quote } from "@/types/quote";
 
 export default function Dashboard() {
-  const [recentQuotes, setRecentQuotes] = useState<Quote[]>([]);
+  const [quoteGroups, setQuoteGroups] = useState<QuoteGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { pendingCount, isSyncing, syncAll, refreshPending } = useOfflineStorage();
 
   useEffect(() => {
     async function loadData() {
       try {
-        const quotes = await getRecentQuotes(5);
-        setRecentQuotes(quotes);
+        // Get more quotes to properly group versions
+        const quotes = await getRecentQuotes(20);
+        const groups = groupQuotesByVersion(quotes);
+        // Show only top 5 groups on dashboard
+        setQuoteGroups(groups.slice(0, 5));
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
@@ -34,23 +36,19 @@ export default function Dashboard() {
   }, []);
 
   const handleQuoteCreated = async () => {
-    const quotes = await getRecentQuotes(5);
-    setRecentQuotes(quotes);
+    const quotes = await getRecentQuotes(20);
+    const groups = groupQuotesByVersion(quotes);
+    setQuoteGroups(groups.slice(0, 5));
     await refreshPending();
   };
 
   const handleSync = async () => {
     toast.info("Syncing pending quotes...");
     await syncAll();
-    const quotes = await getRecentQuotes(5);
-    setRecentQuotes(quotes);
+    const quotes = await getRecentQuotes(20);
+    const groups = groupQuotesByVersion(quotes);
+    setQuoteGroups(groups.slice(0, 5));
     toast.success("Sync complete!");
-  };
-
-  const statusColors = {
-    draft: "bg-amber-100 text-amber-800",
-    sent: "bg-blue-100 text-blue-800",
-    accepted: "bg-green-100 text-green-800",
   };
 
   return (
@@ -77,7 +75,7 @@ export default function Dashboard() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-text">Recent Quotes</h2>
-            {recentQuotes.length > 0 && (
+            {quoteGroups.length > 0 && (
               <Link href="/quotes" className="text-sm text-primary hover:text-primary-dark">
                 View all
               </Link>
@@ -88,7 +86,7 @@ export default function Dashboard() {
             <div className="flex justify-center py-8">
               <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
             </div>
-          ) : recentQuotes.length === 0 ? (
+          ) : quoteGroups.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <p className="text-text-muted">No quotes yet</p>
@@ -99,34 +97,12 @@ export default function Dashboard() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {recentQuotes.map((quote) => (
-                <Link key={quote.id} href={`/quote/${quote.id}`}>
-                  <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-                    <CardContent className="py-3 px-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-text truncate">
-                              {quote.customerName}
-                            </p>
-                            <Badge
-                              variant="secondary"
-                              className={`text-xs ${statusColors[quote.status]}`}
-                            >
-                              {quote.status}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-text-muted">
-                            {formatRelativeTime(quote.updatedAt)}
-                          </p>
-                        </div>
-                        <span className="font-semibold text-text">
-                          {formatNZD(quote.total)}
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+              {quoteGroups.map((group) => (
+                <QuoteListItem
+                  key={group.latest.id}
+                  quote={group.latest}
+                  olderVersions={group.olderVersions}
+                />
               ))}
             </div>
           )}

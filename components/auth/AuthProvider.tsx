@@ -32,12 +32,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const bindLocalQuotesToUser = useCallback(async (userId: string) => {
     try {
       const deviceToken = await getDeviceToken();
+      console.log("[Auth] Binding quotes - deviceToken:", deviceToken, "userId:", userId);
+
       const result = await bindDeviceQuotesToUser(deviceToken, userId);
+      console.log("[Auth] Bind result:", result);
+
       if (result.count > 0) {
-        console.log(`Bound ${result.count} quotes to user`);
+        console.log(`[Auth] Bound ${result.count} quotes to user`);
+      } else if (result.error) {
+        console.error("[Auth] Bind error:", result.error);
+      } else {
+        console.log("[Auth] No quotes to bind (count: 0)");
       }
     } catch (err) {
-      console.error("Failed to bind quotes:", err);
+      console.error("[Auth] Failed to bind quotes:", err);
     }
   }, []);
 
