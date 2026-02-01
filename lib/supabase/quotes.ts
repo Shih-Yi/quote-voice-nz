@@ -5,6 +5,7 @@ interface SupabaseQuoteRow {
   id: string;
   slug: string;
   owner_token: string;
+  user_id: string | null;
   customer_name: string;
   customer_phone: string | null;
   customer_email: string | null;
@@ -27,6 +28,34 @@ interface SupabaseQuoteItem {
   quantity: number;
   unit_price: number;
   total: number;
+}
+
+// Helper to fetch owner profile
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<UserProfile | undefined> {
+  if (!userId) return undefined;
+
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (data) {
+      return {
+        id: data.id,
+        businessName: data.business_name,
+        phone: data.phone,
+        email: data.email,
+        address: data.address,
+        bankAccount: data.bank_account,
+      };
+    }
+  } catch {
+    // Ignore errors, profile might not exist
+  }
+  return undefined;
 }
 
 // Convert local Quote to Supabase format
@@ -62,6 +91,7 @@ function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
   return {
     id: row.id,
     slug: row.slug,
+    userId: row.user_id || undefined,
     customerName: row.customer_name,
     customerPhone: row.customer_phone ?? undefined,
     customerEmail: row.customer_email ?? undefined,
@@ -228,7 +258,10 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
       return null;
     }
 
-    return fromSupabaseFormat(data as SupabaseQuoteRow);
+    const quote = fromSupabaseFormat(data as SupabaseQuoteRow);
+    quote.ownerProfile = await fetchOwnerProfile(supabase, quote.userId || null);
+
+    return quote;
   } catch {
     return null;
   }
@@ -252,7 +285,10 @@ export async function getQuoteByIdFromSupabase(id: string): Promise<Quote | null
       return null;
     }
 
-    return fromSupabaseFormat(data as SupabaseQuoteRow);
+    const quote = fromSupabaseFormat(data as SupabaseQuoteRow);
+    quote.ownerProfile = await fetchOwnerProfile(supabase, quote.userId || null);
+
+    return quote;
   } catch {
     return null;
   }
@@ -274,6 +310,7 @@ export async function getQuotesByDeviceToken(deviceToken: string): Promise<Quote
       return [];
     }
 
+    // Usually we don't need profile for the list view
     return (data as SupabaseQuoteRow[]).map(fromSupabaseFormat);
   } catch {
     return [];

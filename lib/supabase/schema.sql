@@ -168,7 +168,7 @@ BEGIN
   SET user_id = p_user_id,
       updated_at = NOW()
   WHERE owner_token = p_device_token
-    AND user_id IS NULL;
+    AND (user_id IS NULL OR user_id = p_user_id);
 
   GET DIAGNOSTICS v_updated = ROW_COUNT;
 

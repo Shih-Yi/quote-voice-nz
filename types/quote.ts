@@ -6,10 +6,21 @@ export interface LineItem {
   total: number;
 }
 
+export interface UserProfile {
+  id: string;
+  businessName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bankAccount?: string;
+}
+
 export interface Quote {
   id: string;
   slug?: string;
   ownerToken?: string;  // Secret token for edit/delete (only stored locally)
+  userId?: string;      // Linked user ID (if registered)
+  ownerProfile?: UserProfile; // Owner's business details
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
