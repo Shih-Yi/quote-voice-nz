@@ -66,7 +66,10 @@
 
 ## 🇳🇿 New Zealand Business Logic (Strict Adherence)
 - **GST:** All calculations default to 15% GST. Quote items must support "GST inclusive" and "GST exclusive" toggles.
+- **Spelling:** Always use New Zealand/British English spelling conventions. Example: Labour (not Labor), Organise (not Organize), Centred (not Centered).
 - **Currency:** Default currency is NZD ($).
+- **Tax:** 15% GST. Default labels should be "GST Inclusive" or "Plus GST".
+- **Transcription Logic:** Instruct AI to transcribe and extract items using NZ spelling (e.g., "General Labour").
 - **Date Format:** Use DD/MM/YYYY for all UI displays.
 - **Address:** Format for NZ Post standards.
 - **Bank Accounts:** Validate NZ bank account format (XX-XXXX-XXXXXXX-XX).
