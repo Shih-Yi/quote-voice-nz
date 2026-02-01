@@ -21,6 +21,8 @@ export interface Quote {
   ownerToken?: string;  // Secret token for edit/delete (only stored locally)
   userId?: string;      // Linked user ID (if registered)
   ownerProfile?: UserProfile; // Owner's business details
+  parentId?: string;    // For version tracking (if duplicated from another quote)
+  version?: number;     // Version number (1, 2, 3...)
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;

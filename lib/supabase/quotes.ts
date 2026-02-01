@@ -1,5 +1,5 @@
 import { getSupabase } from "./client";
-import type { Quote, LineItem } from "@/types/quote";
+import type { Quote, LineItem, UserProfile } from "@/types/quote";
 
 interface SupabaseQuoteRow {
   id: string;
@@ -18,6 +18,8 @@ interface SupabaseQuoteRow {
   gst: number;
   total: number;
   status: string;
+  parent_id: string | null;    // Version tracking
+  version: number;             // Version number
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +83,8 @@ function toSupabaseFormat(quote: Quote, deviceToken: string): Record<string, unk
     gst_inclusive: quote.gstInclusive,
     items_sum: itemsSum,
     status: quote.status,
+    parent_id: quote.parentId || null,   // Version tracking
+    version: quote.version || 1,          // Default to V1
     created_at: quote.createdAt,
     updated_at: quote.updatedAt,
   };
@@ -92,6 +96,8 @@ function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
     id: row.id,
     slug: row.slug,
     userId: row.user_id || undefined,
+    parentId: row.parent_id ?? undefined,   // Version tracking
+    version: row.version || 1,               // Default to V1
     customerName: row.customer_name,
     customerPhone: row.customer_phone ?? undefined,
     customerEmail: row.customer_email ?? undefined,

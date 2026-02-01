@@ -126,6 +126,7 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
 }
 
 // Duplicate a quote (for editing sent quotes)
+// Creates a new version with parent_id pointing to original
 export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   const quotes = await getAllQuotes();
   const original = quotes.find((q) => q.id === quoteId);
@@ -134,11 +135,20 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
     return null;
   }
 
-  // Create new quote with new ID and slug
+  // Calculate next version number
+  // If original has no parent, it's V1. New version = original.version + 1
+  const nextVersion = (original.version || 1) + 1;
+
+  // Find the root parent (for version chain)
+  const rootParentId = original.parentId || original.id;
+
+  // Create new quote with new ID, slug, and version tracking
   const newQuote: Quote = {
     ...original,
     id: crypto.randomUUID(),
     slug: await generateSlug(),
+    parentId: rootParentId,  // Points to original quote (root of version chain)
+    version: nextVersion,
     status: "draft",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -148,6 +158,32 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   await saveQuote(newQuote);
 
   return newQuote;
+}
+
+// Unlock a sent quote for editing (changes status back to draft)
+// WARNING: This modifies the original - use with caution
+export async function unlockQuoteForEditing(quoteId: string): Promise<{ success: boolean }> {
+  const quotes = await getAllQuotes();
+  const index = quotes.findIndex((q) => q.id === quoteId);
+
+  if (index < 0) {
+    return { success: false };
+  }
+
+  const updatedQuote = {
+    ...quotes[index],
+    status: "draft" as const,
+    updatedAt: new Date().toISOString(),
+  };
+
+  quotes[index] = updatedQuote;
+  await set(QUOTES_KEY, quotes);
+
+  // Sync to Supabase
+  const deviceToken = await getDeviceToken();
+  await updateQuoteInSupabase(updatedQuote, deviceToken);
+
+  return { success: true };
 }
 
 // Delete quote - local and Supabase

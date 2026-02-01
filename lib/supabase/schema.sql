@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS api.quotes (
   -- Status
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'accepted')),
 
+  -- Version tracking (for revisions)
+  parent_id UUID REFERENCES api.quotes(id) ON DELETE SET NULL,  -- Original quote if this is a revision
+  version INTEGER NOT NULL DEFAULT 1,  -- Version number (1, 2, 3...)
+
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -93,10 +97,19 @@ CREATE POLICY "quotes_update"
   USING (auth.uid() IS NOT NULL AND user_id = auth.uid())
   WITH CHECK (auth.uid() IS NOT NULL AND user_id = auth.uid());
 
--- DELETE: Authenticated user who owns it
+-- DELETE: Only allow deleting DRAFT quotes that have NO children (versions)
+-- This protects version chain integrity
 CREATE POLICY "quotes_delete"
   ON api.quotes FOR DELETE
-  USING (auth.uid() IS NOT NULL AND user_id = auth.uid());
+  USING (
+    auth.uid() IS NOT NULL
+    AND user_id = auth.uid()
+    AND status = 'draft'
+    AND NOT EXISTS (
+      SELECT 1 FROM api.quotes children
+      WHERE children.parent_id = api.quotes.id
+    )
+  );
 
 -- ============================================
 -- SECURE ANONYMOUS OPERATIONS (RPC)
@@ -132,6 +145,7 @@ END;
 $$;
 
 -- Secure Delete: Requires matching owner_token
+-- Only allows deleting DRAFT quotes without children (versions)
 CREATE OR REPLACE FUNCTION api.delete_quote_anon(
   p_id UUID,
   p_token TEXT
@@ -141,8 +155,15 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+  -- Only delete if: draft status AND no children (versions)
   DELETE FROM api.quotes
-  WHERE id = p_id AND owner_token = p_token;
+  WHERE id = p_id
+    AND owner_token = p_token
+    AND status = 'draft'
+    AND NOT EXISTS (
+      SELECT 1 FROM api.quotes children
+      WHERE children.parent_id = p_id
+    );
 
   RETURN FOUND;
 END;
