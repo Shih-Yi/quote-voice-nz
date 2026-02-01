@@ -9,10 +9,11 @@ import { QuoteForm } from "@/components/quote/QuoteForm";
 import { QuotePreview } from "@/components/quote/QuotePreview";
 import { QuotePDF } from "@/components/quote/QuotePDF";
 import { QuoteShare } from "@/components/quote/QuoteShare";
+import { EditSentQuoteDialog } from "@/components/quote/EditSentQuoteDialog";
 import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
-import { getQuoteById, saveQuote, deleteQuote, refreshQuoteFromCloud } from "@/lib/storage/quotes";
+import { getQuoteById, updateQuote, deleteQuote, refreshQuoteFromCloud, markQuoteAsSent, duplicateQuote, unlockQuoteForEditing } from "@/lib/storage/quotes";
 import { useAuth } from "@/hooks/useAuth";
 import type { Quote } from "@/types/quote";
 
@@ -28,7 +29,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const { user, signUp, signIn, signInGoogle } = useAuth();
+  const [showEditSentDialog, setShowEditSentDialog] = useState(false);
+  const { user, loading: authLoading, signUp, signIn, signInGoogle } = useAuth();
 
   useEffect(() => {
     async function loadQuote() {
@@ -70,7 +72,11 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const handleSave = useCallback(async (updatedQuote: Quote) => {
     setIsSaving(true);
     try {
-      await saveQuote(updatedQuote);
+      const result = await updateQuote(updatedQuote);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       setQuote(updatedQuote);
       setIsEditing(false);
       toast.success("Quote saved!");
@@ -85,15 +91,9 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const handleSend = useCallback(async () => {
     if (!quote) return;
 
-    const updatedQuote: Quote = {
-      ...quote,
-      status: "sent",
-      updatedAt: new Date().toISOString(),
-    };
-
     try {
-      await saveQuote(updatedQuote);
-      setQuote(updatedQuote);
+      await markQuoteAsSent(quote.id);
+      setQuote({ ...quote, status: "sent" });
       toast.success("Quote marked as sent!");
     } catch (error) {
       console.error("Failed to update quote:", error);
@@ -117,6 +117,50 @@ export default function QuoteEditorPage({ params }: PageProps) {
       toast.error("Failed to delete quote");
     }
   }, [quote, router]);
+
+  // Handle edit button click - show dialog for sent quotes
+  const handleEditClick = useCallback(() => {
+    if (!quote) return;
+
+    if (quote.status !== "draft") {
+      // Show dialog for sent/accepted quotes
+      setShowEditSentDialog(true);
+    } else {
+      // Direct edit for drafts
+      setIsEditing(true);
+    }
+  }, [quote]);
+
+  // Create new version (duplicate with version tracking)
+  const handleCreateNewVersion = useCallback(async () => {
+    if (!quote) return;
+
+    try {
+      const newQuote = await duplicateQuote(quote.id);
+      if (newQuote) {
+        toast.success(`Version ${newQuote.version} created!`);
+        router.push(`/quote/${newQuote.id}`);
+      }
+    } catch (error) {
+      console.error("Failed to create new version:", error);
+      toast.error("Failed to create new version");
+    }
+  }, [quote, router]);
+
+  // Edit original (unlock and edit in place)
+  const handleEditOriginal = useCallback(async () => {
+    if (!quote) return;
+
+    try {
+      await unlockQuoteForEditing(quote.id);
+      setQuote({ ...quote, status: "draft" });
+      setIsEditing(true);
+      toast.info("Quote unlocked for editing");
+    } catch (error) {
+      console.error("Failed to unlock quote:", error);
+      toast.error("Failed to unlock quote");
+    }
+  }, [quote]);
 
   if (isLoading) {
     return (
@@ -198,29 +242,44 @@ export default function QuoteEditorPage({ params }: PageProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setIsEditing(true)}
+                onClick={handleEditClick}
               >
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                {quote.status !== "draft" ? (
+                  <svg className="w-4 h-4 mr-1 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                )}
                 Edit
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDelete}
-              className="text-red-500 hover:text-red-600 hover:bg-red-50"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </Button>
+            {/* Version Badge */}
+            {quote.version && quote.version > 1 && (
+              <span className="text-xs text-text-muted bg-gray-100 px-2 py-1 rounded">
+                V{quote.version}
+              </span>
+            )}
+            {/* Delete - Only show for drafts */}
+            {quote.status === "draft" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Registration Prompt - Show only for non-logged-in users */}
-        {!user && (
+        {/* Registration Prompt - Show only for non-logged-in users (after auth check) */}
+        {!user && !authLoading && (
           <RegisterPrompt onRegisterClick={() => setShowAuthModal(true)} />
         )}
 
@@ -231,6 +290,15 @@ export default function QuoteEditorPage({ params }: PageProps) {
           onSignUp={signUp}
           onSignIn={signIn}
           onSignInGoogle={signInGoogle}
+        />
+
+        {/* Edit Sent Quote Dialog */}
+        <EditSentQuoteDialog
+          open={showEditSentDialog}
+          onOpenChange={setShowEditSentDialog}
+          currentVersion={quote.version || 1}
+          onCreateNewVersion={handleCreateNewVersion}
+          onEditOriginal={handleEditOriginal}
         />
 
         {/* Content */}
