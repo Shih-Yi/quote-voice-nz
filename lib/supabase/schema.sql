@@ -1,12 +1,15 @@
 -- KiwiSpeakQuote Database Schema
 -- Run this in Supabase SQL Editor
 
--- ⚠️  FOR "Dedicated API Schema" SETUP
--- If you chose "Use public schema" instead, replace all `api.` with `public.`
+-- ============================================
+-- QUOTES TABLE (Dedicated API Schema)
+-- Note: This creates a real TABLE in api schema, not a VIEW
+-- RLS policies work on tables (not views)
+-- ============================================
 
--- ============================================
--- QUOTES TABLE
--- ============================================
+-- Ensure the schema exists first
+CREATE SCHEMA IF NOT EXISTS api;
+
 CREATE TABLE IF NOT EXISTS api.quotes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   slug TEXT UNIQUE NOT NULL,
@@ -23,11 +26,37 @@ CREATE TABLE IF NOT EXISTS api.quotes (
   items JSONB NOT NULL DEFAULT '[]',
   notes TEXT,
 
-  -- Pricing (NZD)
+  -- Pricing (NZD) - Database calculates GST automatically
+  -- items_sum: Sum of all line item totals (INPUT from frontend)
+  -- If gst_inclusive=false: items_sum is NET (before GST)
+  -- If gst_inclusive=true: items_sum is GROSS (including GST)
   gst_inclusive BOOLEAN DEFAULT FALSE,
-  subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
-  gst NUMERIC(10, 2) NOT NULL DEFAULT 0,
-  total NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  items_sum NUMERIC(10, 2) NOT NULL DEFAULT 0,
+
+  -- GENERATED columns - calculated by database, not frontend
+  -- subtotal: NET amount (before GST)
+  subtotal NUMERIC(10, 2) GENERATED ALWAYS AS (
+    CASE
+      WHEN gst_inclusive THEN ROUND(items_sum * 20 / 23, 2)
+      ELSE items_sum
+    END
+  ) STORED,
+
+  -- gst: GST amount (15%)
+  gst NUMERIC(10, 2) GENERATED ALWAYS AS (
+    CASE
+      WHEN gst_inclusive THEN ROUND(items_sum * 3 / 23, 2)
+      ELSE ROUND(items_sum * 15 / 100, 2)
+    END
+  ) STORED,
+
+  -- total: GROSS amount (including GST)
+  total NUMERIC(10, 2) GENERATED ALWAYS AS (
+    CASE
+      WHEN gst_inclusive THEN items_sum
+      ELSE ROUND(items_sum * 115 / 100, 2)
+    END
+  ) STORED,
 
   -- Status
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'accepted')),
@@ -93,7 +122,6 @@ AS $$
 DECLARE
   v_updated INTEGER;
 BEGIN
-  -- Update quote where owner_token matches and user_id is NULL
   UPDATE api.quotes
   SET user_id = p_user_id,
       updated_at = NOW()
@@ -178,3 +206,12 @@ CREATE POLICY "profiles_update_own"
   ON api.profiles FOR UPDATE
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
+
+-- ============================================
+-- PERMISSIONS
+-- Grant access to custom schema for Supabase roles
+-- ============================================
+GRANT USAGE ON SCHEMA api TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA api TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA api TO anon, authenticated, service_role;
+GRANT ALL ON ALL ROUTINES IN SCHEMA api TO anon, authenticated, service_role;

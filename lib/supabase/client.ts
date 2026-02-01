@@ -1,8 +1,11 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-let supabaseInstance: SupabaseClient | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ApiSupabaseClient = SupabaseClient<any, "api", any>;
 
-export function getSupabase(): SupabaseClient | null {
+let supabaseInstance: ApiSupabaseClient | null = null;
+
+export function getSupabase(): ApiSupabaseClient | null {
   if (!isSupabaseConfigured()) {
     return null;
   }
@@ -10,7 +13,12 @@ export function getSupabase(): SupabaseClient | null {
   if (!supabaseInstance) {
     supabaseInstance = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        db: {
+          schema: "api",  // Use Dedicated API Schema
+        },
+      }
     );
   }
 
