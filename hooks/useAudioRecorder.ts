@@ -61,6 +61,12 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       chunksRef.current = [];
       pausedDurationRef.current = 0;
 
+      // Check if mediaDevices is available (requires HTTPS or localhost)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError("Recording requires HTTPS. Please use localhost or a secure connection.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
