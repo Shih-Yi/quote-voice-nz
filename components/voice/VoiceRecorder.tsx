@@ -56,7 +56,13 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
 
         // Try to transcribe
         const formData = new FormData();
-        formData.append("audio", blob, "recording.webm");
+        // Determine extension based on blob type
+        let extension = "webm";
+        if (blob.type.includes("mp4")) extension = "mp4";
+        else if (blob.type.includes("aac")) extension = "aac";
+        else if (blob.type.includes("ogg")) extension = "ogg";
+        
+        formData.append("audio", blob, `recording.${extension}`);
 
         const transcribeRes = await fetch("/api/transcribe", {
           method: "POST",

@@ -65,20 +65,38 @@ export function useAudioRecorder(): UseAudioRecorderResult {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          sampleRate: 44100,
+          // Remove fixed sampleRate to avoid OverconstrainedError on some mobile devices
         },
       });
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "audio/webm";
+      // Determine the best supported MIME type
+      // iOS Safari prefers audio/mp4 or audio/aac
+      // Chrome/Firefox prefer audio/webm
+      const getMimeType = () => {
+        const types = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/aac",
+        ];
+        for (const type of types) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            return type;
+          }
+        }
+        return undefined; // Let browser choose default
+      };
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
+      const mimeType = getMimeType();
+      const options: MediaRecorderOptions = {
         audioBitsPerSecond: 128000,
-      });
+      };
+      
+      if (mimeType) {
+        options.mimeType = mimeType;
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
 
       mediaRecorderRef.current = mediaRecorder;
 
@@ -89,12 +107,15 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType });
+        // Use the actual mimeType the recorder settled on, or the one we requested
+        const finalType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: finalType });
         setAudioBlob(blob);
         stream.getTracks().forEach((track) => track.stop());
       };
 
-      mediaRecorder.onerror = () => {
+      mediaRecorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
         setError("Recording failed. Please try again.");
         stream.getTracks().forEach((track) => track.stop());
       };
@@ -106,14 +127,21 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       startTimer();
       triggerHaptic();
     } catch (err) {
+      console.error("Recording error:", err);
       if (err instanceof Error) {
-        if (err.name === "NotAllowedError") {
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
           setError("Microphone access denied. Please allow microphone access.");
-        } else if (err.name === "NotFoundError") {
+        } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
           setError("No microphone found. Please connect a microphone.");
+        } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+           setError("Microphone is busy or not readable. Close other apps using mic.");
+        } else if (err.name === "OverconstrainedError") {
+           setError("Microphone settings not supported by this device.");
         } else {
-          setError("Failed to start recording. Please try again.");
+          setError(`Failed to start recording (${err.name}).`);
         }
+      } else {
+        setError("Failed to start recording.");
       }
     }
   }, [startTimer, triggerHaptic]);
