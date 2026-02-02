@@ -37,18 +37,25 @@ export function QuotePDF({ quote }: QuotePDFProps) {
       const mutedColor: [number, number, number] = [107, 114, 128]; // #6B7280
 
       // ============================================
-      // HEADER with KQ Logo
+      // HEADER with Custom Logo
       // ============================================
-      const profile = quote.ownerProfile;
-      const businessName = profile?.businessName || "KiwiSpeakQuote";
-      const initials = businessName.substring(0, 2).toUpperCase();
+      const provider = quote.providerDetails || {};
+      const businessName = provider.businessName || "KiwiSpeakQuote";
+      
+      // Initials logic: Try to get first letter of first 2 words (e.g. "Bob's Plumbing" -> "BP")
+      // If single word, take first 2 letters (e.g. "Kiwi" -> "KI")
+      let initials = (businessName.match(/\b\w/g) || []).slice(0, 2).join("").toUpperCase();
+      if (initials.length < 2) {
+          initials = businessName.substring(0, 2).toUpperCase();
+      }
 
       // Logo background
       pdf.setFillColor(...primaryColor);
       pdf.roundedRect(margin, y, 15, 15, 2, 2, "F");
 
-      // Logo text
+      // Logo text (Initials)
       pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(provider.businessName ? 9 : 10); // Smaller font if real business name to fit? No, initials are short.
       pdf.setFontSize(10);
       pdf.setFont("helvetica", "bold");
       pdf.text(initials, margin + 7.5, y + 9.5, { align: "center" });
@@ -67,26 +74,27 @@ export function QuotePDF({ quote }: QuotePDFProps) {
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "normal");
 
-      if (profile) {
-        if (profile.address) {
-          pdf.text(profile.address, infoX, infoY);
-          infoY += 4;
-        }
-        if (profile.phone) {
-          pdf.text(profile.phone, infoX, infoY);
-          infoY += 4;
-        }
-        if (profile.email) {
-          pdf.text(profile.email, infoX, infoY);
-          infoY += 4;
-        }
-        if (profile.bankAccount) {
-          infoY += 2;
-          pdf.setFont("helvetica", "bold");
-          pdf.text(`Bank: ${profile.bankAccount}`, infoX, infoY);
-        }
-      } else {
-        pdf.text("Quote", infoX, infoY);
+      if (provider.address) {
+        // Handle multiline address
+        const addressLines = pdf.splitTextToSize(provider.address, 100);
+        pdf.text(addressLines, infoX, infoY);
+        infoY += addressLines.length * 4;
+      }
+      
+      if (provider.phone) {
+        pdf.text(provider.phone, infoX, infoY);
+        infoY += 4;
+      }
+      
+      if (provider.email) {
+        pdf.text(provider.email, infoX, infoY);
+        infoY += 4;
+      }
+      
+      if (provider.bankAccount) {
+        infoY += 2;
+        pdf.setFont("helvetica", "bold");
+        pdf.text(`Bank: ${provider.bankAccount}`, infoX, infoY);
       }
 
       // "QUOTE" title on right
