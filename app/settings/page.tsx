@@ -102,7 +102,7 @@ export default function SettingsPage() {
                   id="businessName"
                   value={profile.businessName || ""}
                   onChange={(e) => handleChange("businessName", e.target.value)}
-                  placeholder="e.g. Bob's Plumbing"
+                  placeholder="e.g. Kiwi Plumbing Ltd"
                 />
               </div>
 

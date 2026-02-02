@@ -137,7 +137,7 @@ export function ProviderInfo({ providerDetails, onChange, readOnly = false }: Pr
                         id="bizName" 
                         value={localDetails.businessName || ""} 
                         onChange={(e) => handleChange("businessName", e.target.value)}
-                        placeholder="e.g. Bob's Plumbing"
+                        placeholder="e.g. Kiwi Plumbing Ltd"
                         className="pl-9"
                     />
                 </div>
