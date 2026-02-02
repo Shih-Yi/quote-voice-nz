@@ -1,18 +1,57 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation"; // Import useSearchParams
+import { useEffect, useState, Suspense } from "react"; // Import useEffect, useState, Suspense
 import { Mic, CheckCircle2, Send, SignalHigh, Receipt, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { AuthModal } from "@/components/auth/AuthModal"; // Import AuthModal
+import { useAuth } from "@/hooks/useAuth"; // Import useAuth
 
-export default function LandingPage() {
+function LandingPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { signUp, signIn, signInGoogle } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [defaultTab, setDefaultTab] = useState<"login" | "register">("login");
+
+  useEffect(() => {
+    const authParam = searchParams.get("auth");
+    if (authParam === "register") {
+      setDefaultTab("register");
+      setShowAuthModal(true);
+    } else if (authParam === "login") {
+      setDefaultTab("login");
+      setShowAuthModal(true);
+    }
+  }, [searchParams]);
+
+  // Clean URL when modal closes
+  const handleOpenChange = (open: boolean) => {
+    setShowAuthModal(open);
+    if (!open) {
+      router.replace("/", { scroll: false });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-bg-white flex flex-col font-sans">
       <Header maxWidth="max-w-5xl" />
 
       <main className="flex-1">
+        {/* Auth Modal for Deep Linking */}
+        <AuthModal
+            open={showAuthModal}
+            onOpenChange={handleOpenChange}
+            defaultTab={defaultTab}
+            onSignUp={signUp}
+            onSignIn={signIn}
+            onSignInGoogle={signInGoogle}
+        />
+
         {/* Hero Section */}
         <section className="px-4 py-12 md:py-24 lg:py-32 max-w-5xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
@@ -220,5 +259,13 @@ export default function LandingPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense fallback={null}>
+      <LandingPageContent />
+    </Suspense>
   );
 }
