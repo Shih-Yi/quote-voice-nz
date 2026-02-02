@@ -16,12 +16,13 @@ import type { Quote, LineItem, UserProfile } from "@/types/quote";
 
 interface QuoteFormProps {
   quote: Quote;
-  onSave: (quote: Quote) => void;
+  onSave: (quote: Quote, updateProfile?: boolean) => void; // Updated signature
 }
 
 export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
   const [quote, setQuote] = useState<Quote>(initialQuote);
   const [gstInclusive, setGstInclusive] = useState(initialQuote.gstInclusive);
+  const [shouldUpdateProfile, setShouldUpdateProfile] = useState(false); // New state
 
   const updateTotals = useCallback(
     (items: LineItem[], inclusive: boolean) => {
@@ -48,6 +49,10 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
       providerDetails: details,
       updatedAt: new Date().toISOString(),
     }));
+  }, []);
+
+  const handleProfileUpdateCheckbox = useCallback((checked: boolean) => {
+    setShouldUpdateProfile(checked);
   }, []);
 
   const handleItemUpdate = useCallback(
@@ -116,8 +121,8 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
   }, [updateTotals]);
 
   const handleSave = useCallback(() => {
-    onSave(quote);
-  }, [quote, onSave]);
+    onSave(quote, shouldUpdateProfile);
+  }, [quote, shouldUpdateProfile, onSave]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -125,6 +130,7 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
       <ProviderInfo 
         providerDetails={quote.providerDetails} 
         onChange={handleProviderUpdate} 
+        onUpdateProfile={handleProfileUpdateCheckbox}
       />
 
       {/* Customer Details */}

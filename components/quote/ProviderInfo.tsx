@@ -16,15 +16,23 @@ import Link from "next/link";
 interface ProviderInfoProps {
   providerDetails?: UserProfile;
   onChange: (details: UserProfile) => void;
+  onUpdateProfile?: (update: boolean) => void; // New prop
   readOnly?: boolean;
 }
 
-export function ProviderInfo({ providerDetails, onChange, readOnly = false }: ProviderInfoProps) {
+export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, readOnly = false }: ProviderInfoProps) {
   const { user } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [updateDefault, setUpdateDefault] = useState(false); // Checkbox state
   
   // Local state for editing fields
   const [localDetails, setLocalDetails] = useState<UserProfile>(providerDetails || {});
+
+  // Notify parent of checkbox change
+  const handleCheckboxChange = (checked: boolean) => {
+    setUpdateDefault(checked);
+    onUpdateProfile?.(checked);
+  };
 
   // Initialize: Load defaults if empty
   useEffect(() => {
@@ -175,6 +183,10 @@ export function ProviderInfo({ providerDetails, onChange, readOnly = false }: Pr
                 </div>
               </div>
               
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox (need to ensure it exists or use standard input)
+
+// ... inside render ...
+
               {/* "Sick of typing" Prompt for Anon Users */}
               {!user && (localDetails.businessName || localDetails.phone) && (
                 <div className="mt-4 p-3 bg-indigo-50 rounded-md border border-indigo-100 flex flex-col gap-2">
@@ -187,6 +199,25 @@ export function ProviderInfo({ providerDetails, onChange, readOnly = false }: Pr
                             Create Account
                         </Button>
                     </Link>
+                </div>
+              )}
+
+              {/* Update Default Profile Checkbox for Logged-in Users */}
+              {user && (
+                <div className="flex items-center space-x-2 mt-4 pt-2 border-t border-dashed">
+                  <input
+                    type="checkbox"
+                    id="updateDefault"
+                    checked={updateDefault}
+                    onChange={(e) => handleCheckboxChange(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Label 
+                    htmlFor="updateDefault" 
+                    className="text-xs text-text-muted cursor-pointer font-normal"
+                  >
+                    Save these changes to my default profile
+                  </Label>
                 </div>
               )}
             </div>

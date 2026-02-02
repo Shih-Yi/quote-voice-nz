@@ -14,6 +14,7 @@ import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { getQuoteById, updateQuote, deleteQuote, refreshQuoteFromCloud, markQuoteAsSent, duplicateQuote, unlockQuoteForEditing } from "@/lib/storage/quotes";
+import { updateUserProfile } from "@/lib/supabase/profile";
 import { useAuth } from "@/hooks/useAuth";
 import type { Quote } from "@/types/quote";
 
@@ -69,14 +70,27 @@ export default function QuoteEditorPage({ params }: PageProps) {
     loadQuote();
   }, [resolvedParams.id]);
 
-  const handleSave = useCallback(async (updatedQuote: Quote) => {
+  const handleSave = useCallback(async (updatedQuote: Quote, updateProfile?: boolean) => {
     setIsSaving(true);
     try {
+      // 1. Save the quote
       const result = await updateQuote(updatedQuote);
       if (result.error) {
         toast.error(result.error);
+        setIsSaving(false);
         return;
       }
+
+      // 2. Optionally update user profile (if logged in and checkbox checked)
+      if (updateProfile && user && updatedQuote.providerDetails) {
+        const profileResult = await updateUserProfile(user.id, updatedQuote.providerDetails);
+        if (profileResult.success) {
+            toast.success("Default profile settings updated!");
+        } else {
+            console.error("Failed to update profile", profileResult.error);
+        }
+      }
+
       setQuote(updatedQuote);
       setIsEditing(false);
       toast.success("Quote saved!");
@@ -86,7 +100,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
     } finally {
       setIsSaving(false);
     }
-  }, []);
+  }, [user]);
 
   const handleSend = useCallback(async () => {
     if (!quote) return;
