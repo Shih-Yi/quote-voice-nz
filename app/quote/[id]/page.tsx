@@ -317,7 +317,11 @@ export default function QuoteEditorPage({ params }: PageProps) {
 
         {/* Content */}
         {isEditing ? (
-          <QuoteForm quote={quote} onSave={handleSave} />
+          <QuoteForm 
+            quote={quote} 
+            onSave={handleSave} 
+            onShowAuthModal={() => setShowAuthModal(true)}
+          />
         ) : (
           <QuotePreview quote={quote} />
         )}

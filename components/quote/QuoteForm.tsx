@@ -16,10 +16,11 @@ import type { Quote, LineItem, UserProfile } from "@/types/quote";
 
 interface QuoteFormProps {
   quote: Quote;
-  onSave: (quote: Quote, updateProfile?: boolean) => void; // Updated signature
+  onSave: (quote: Quote, updateProfile?: boolean) => void;
+  onShowAuthModal?: () => void; // New prop
 }
 
-export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
+export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: QuoteFormProps) {
   const [quote, setQuote] = useState<Quote>(initialQuote);
   const [gstInclusive, setGstInclusive] = useState(initialQuote.gstInclusive);
   const [shouldUpdateProfile, setShouldUpdateProfile] = useState(false); // New state
@@ -44,8 +45,7 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
   );
 
   const handleProviderUpdate = useCallback((details: UserProfile) => {
-    setQuote((prev) => ({
-      ...prev,
+    setQuote((prev) => ({n      ...prev,
       providerDetails: details,
       updatedAt: new Date().toISOString(),
     }));
@@ -131,6 +131,7 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
         providerDetails={quote.providerDetails} 
         onChange={handleProviderUpdate} 
         onUpdateProfile={handleProfileUpdateCheckbox}
+        onShowAuthModal={onShowAuthModal}
       />
 
       {/* Customer Details */}
