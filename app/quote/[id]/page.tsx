@@ -232,7 +232,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
       <div className="flex flex-col gap-4">
         {/* Header Actions */}
         <div className="flex items-center justify-between">
-          <Link href="/" className="text-text-muted hover:text-text">
+          <Link href="/dashboard" className="text-text-muted hover:text-text">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
