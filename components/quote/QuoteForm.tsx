@@ -45,7 +45,8 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
   );
 
   const handleProviderUpdate = useCallback((details: UserProfile) => {
-    setQuote((prev) => ({n      ...prev,
+    setQuote((prev) => ({
+      ...prev,
       providerDetails: details,
       updatedAt: new Date().toISOString(),
     }));
