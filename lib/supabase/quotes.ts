@@ -10,6 +10,7 @@ interface SupabaseQuoteRow {
   customer_phone: string | null;
   customer_email: string | null;
   customer_address: string | null;
+  provider_details: UserProfile | null;
   items: SupabaseQuoteItem[];
   notes: string | null;
   gst_inclusive: boolean;
@@ -72,6 +73,7 @@ function toSupabaseFormat(quote: Quote, deviceToken: string): Record<string, unk
     customer_phone: quote.customerPhone || null,
     customer_email: quote.customerEmail || null,
     customer_address: quote.customerAddress || null,
+    provider_details: quote.providerDetails || null,
     items: quote.items.map((item) => ({
       id: item.id,
       description: item.description,
@@ -102,6 +104,7 @@ function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
     customerPhone: row.customer_phone ?? undefined,
     customerEmail: row.customer_email ?? undefined,
     customerAddress: row.customer_address ?? undefined,
+    providerDetails: row.provider_details || undefined,
     items: (row.items || []).map((item): LineItem => ({
       id: item.id,
       description: item.description,
@@ -169,6 +172,7 @@ export async function updateQuoteInSupabase(
       customer_phone: quote.customerPhone || null,
       customer_email: quote.customerEmail || null,
       customer_address: quote.customerAddress || null,
+      provider_details: quote.providerDetails || null,
       items: quote.items.map((item) => ({
         id: item.id,
         description: item.description,

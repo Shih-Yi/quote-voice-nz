@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS api.quotes (
   customer_email TEXT,
   customer_address TEXT,
 
+  -- Provider info (Snapshot of business details at time of quote)
+  provider_details JSONB DEFAULT '{}'::jsonb,
+
   -- Quote content
   items JSONB NOT NULL DEFAULT '[]',
   notes TEXT,
@@ -132,6 +135,7 @@ BEGIN
     customer_phone = (p_payload->>'customer_phone'),
     customer_email = (p_payload->>'customer_email'),
     customer_address = (p_payload->>'customer_address'),
+    provider_details = (p_payload->'provider_details'),
     items = (p_payload->'items'),
     notes = (p_payload->>'notes'),
     gst_inclusive = (p_payload->>'gst_inclusive')::boolean,
@@ -192,6 +196,25 @@ BEGIN
     AND (user_id IS NULL OR user_id = p_user_id);
 
   GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+  -- SMART ONBOARDING:
+  -- If the user has no profile set up yet, try to populate it
+  -- using the provider_details from their most recent anonymous quote.
+  INSERT INTO api.profiles (id, business_name, phone, email, address, bank_account)
+  SELECT 
+    p_user_id,
+    q.provider_details->>'businessName',
+    q.provider_details->>'phone',
+    q.provider_details->>'email',
+    q.provider_details->>'address',
+    q.provider_details->>'bankAccount'
+  FROM api.quotes q
+  WHERE q.owner_token = p_device_token
+    AND q.provider_details IS NOT NULL
+    AND q.provider_details != '{}'::jsonb
+  ORDER BY q.created_at DESC
+  LIMIT 1
+  ON CONFLICT (id) DO NOTHING; -- Don't overwrite if they already set up a profile via other means
 
   RETURN v_updated;
 END;

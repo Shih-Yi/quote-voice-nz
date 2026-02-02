@@ -7,12 +7,13 @@ export interface LineItem {
 }
 
 export interface UserProfile {
-  id: string;
+  id?: string;
   businessName?: string;
   phone?: string;
   email?: string;
   address?: string;
   bankAccount?: string;
+  gstNumber?: string;
 }
 
 export interface Quote {
@@ -20,7 +21,10 @@ export interface Quote {
   slug?: string;
   ownerToken?: string;  // Secret token for edit/delete (only stored locally)
   userId?: string;      // Linked user ID (if registered)
-  ownerProfile?: UserProfile; // Owner's business details
+  
+  // Provider info (Snapshot of business details at time of quote)
+  providerDetails?: UserProfile; 
+  
   parentId?: string;    // For version tracking (if duplicated from another quote)
   version?: number;     // Version number (1, 2, 3...)
   customerName: string;

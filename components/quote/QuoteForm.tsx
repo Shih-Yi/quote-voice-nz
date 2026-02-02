@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { QuoteItem } from "./QuoteItem";
+import { ProviderInfo } from "./ProviderInfo";
 import { formatNZD } from "@/lib/utils/currency";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
-import type { Quote, LineItem } from "@/types/quote";
+import type { Quote, LineItem, UserProfile } from "@/types/quote";
 
 interface QuoteFormProps {
   quote: Quote;
@@ -40,6 +41,14 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
     },
     []
   );
+
+  const handleProviderUpdate = useCallback((details: UserProfile) => {
+    setQuote((prev) => ({
+      ...prev,
+      providerDetails: details,
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
 
   const handleItemUpdate = useCallback(
     (updatedItem: LineItem) => {
@@ -112,6 +121,12 @@ export function QuoteForm({ quote: initialQuote, onSave }: QuoteFormProps) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Provider Details (My Business) */}
+      <ProviderInfo 
+        providerDetails={quote.providerDetails} 
+        onChange={handleProviderUpdate} 
+      />
+
       {/* Customer Details */}
       <Card>
         <CardHeader className="pb-3">

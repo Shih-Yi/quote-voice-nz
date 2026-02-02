@@ -45,17 +45,27 @@ export function Header({
               <>
                 {user ? (
                   <div className="flex items-center gap-2">
-                    {/* User indicator */}
-                    <div className="flex items-center gap-2 text-sm text-text-muted">
-                      <div className="w-8 h-8 bg-secondary/20 rounded-full flex items-center justify-center">
-                        <svg className="w-4 h-4 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    {/* User indicator - Click to go to Settings */}
+                    <Link href="/settings" className="flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors group">
+                      <div className="w-8 h-8 bg-secondary/20 rounded-full flex items-center justify-center group-hover:bg-primary/10">
+                        <svg className="w-4 h-4 text-secondary group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
                       </div>
                       <span className="hidden sm:inline max-w-[120px] truncate">
                         {user.email}
                       </span>
-                    </div>
+                    </Link>
+                    
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      className="text-text-muted hover:text-text hidden sm:flex"
+                    >
+                      <Link href="/settings">Settings</Link>
+                    </Button>
+
                     <Button
                       variant="ghost"
                       size="sm"
