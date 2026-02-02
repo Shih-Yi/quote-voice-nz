@@ -10,20 +10,20 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import { getStoredProviderDetails, saveProviderDetailsToStorage } from "@/lib/storage/provider";
 import { getSupabase } from "@/lib/supabase/client";
-import { ChevronDown, ChevronUp, Store, Phone, Mail, MapPin } from "lucide-react";
+import { ChevronDown, ChevronUp, Store, Phone, Mail } from "lucide-react";
 import Link from "next/link";
 
 interface ProviderInfoProps {
   providerDetails?: UserProfile;
   onChange: (details: UserProfile) => void;
-  onUpdateProfile?: (update: boolean) => void; // New prop
+  onUpdateProfile?: (update: boolean) => void;
   readOnly?: boolean;
 }
 
 export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, readOnly = false }: ProviderInfoProps) {
   const { user } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [updateDefault, setUpdateDefault] = useState(false); // Checkbox state
+  const [updateDefault, setUpdateDefault] = useState(false);
   
   // Local state for editing fields
   const [localDetails, setLocalDetails] = useState<UserProfile>(providerDetails || {});
@@ -182,10 +182,6 @@ export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, readO
                     />
                 </div>
               </div>
-              
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox (need to ensure it exists or use standard input)
-
-// ... inside render ...
 
               {/* "Sick of typing" Prompt for Anon Users */}
               {!user && (localDetails.businessName || localDetails.phone) && (
