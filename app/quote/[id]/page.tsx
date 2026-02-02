@@ -292,12 +292,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Registration Prompt - Show only for non-logged-in users (after auth check) */}
-        {!user && !authLoading && (
-          <RegisterPrompt onRegisterClick={() => setShowAuthModal(true)} />
-        )}
-
         {/* Auth Modal */}
+        <AuthModal
         <AuthModal
           open={showAuthModal}
           onOpenChange={setShowAuthModal}
