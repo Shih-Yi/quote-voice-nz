@@ -294,7 +294,6 @@ export default function QuoteEditorPage({ params }: PageProps) {
 
         {/* Auth Modal */}
         <AuthModal
-        <AuthModal
           open={showAuthModal}
           onOpenChange={setShowAuthModal}
           onSignUp={signUp}
