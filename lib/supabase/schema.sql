@@ -20,6 +20,117 @@ CREATE SCHEMA IF NOT EXISTS api;
 -- Extension for hashing (if not exists)
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- ============================================
+-- RATE LIMITING SYSTEM
+-- Prevents abuse by limiting API calls per identifier
+-- ============================================
+
+-- Table to track rate limit entries
+CREATE TABLE IF NOT EXISTS api.rate_limits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identifier TEXT NOT NULL,        -- Hashed token or IP address
+  action TEXT NOT NULL,            -- Function name being rate limited
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for efficient lookups and cleanup
+CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup
+  ON api.rate_limits(identifier, action, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_cleanup
+  ON api.rate_limits(created_at);
+
+-- Rate limit configuration (requests per minute)
+-- Stored as a simple key-value for easy adjustment
+CREATE TABLE IF NOT EXISTS api.rate_limit_config (
+  action TEXT PRIMARY KEY,
+  max_requests INTEGER NOT NULL,
+  window_seconds INTEGER NOT NULL DEFAULT 60
+);
+
+-- Default rate limits
+INSERT INTO api.rate_limit_config (action, max_requests, window_seconds) VALUES
+  ('create_quote', 10, 60),         -- 10 quotes per minute (prevent spam)
+  ('update_quote_anon', 30, 60),    -- 30 updates per minute (allow frequent saves)
+  ('delete_quote_anon', 10, 60),    -- 10 deletes per minute
+  ('get_quote_by_slug', 60, 60),    -- 60 reads per minute (higher for public access)
+  ('get_device_quotes', 30, 60),    -- 30 list requests per minute
+  ('bind_device_quotes', 5, 60)     -- 5 binds per minute (sensitive operation)
+ON CONFLICT (action) DO NOTHING;
+
+-- ============================================
+-- FUNCTION: Check and enforce rate limit
+-- Returns TRUE if allowed, raises exception if blocked
+-- ============================================
+CREATE OR REPLACE FUNCTION api.check_rate_limit(
+  p_identifier TEXT,
+  p_action TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = api, public
+AS $$
+DECLARE
+  v_config RECORD;
+  v_count INTEGER;
+  v_window_start TIMESTAMPTZ;
+BEGIN
+  -- Get rate limit config for this action
+  SELECT max_requests, window_seconds INTO v_config
+  FROM api.rate_limit_config
+  WHERE action = p_action;
+
+  -- If no config found, allow by default (fail open for unconfigured actions)
+  IF NOT FOUND THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Calculate window start time
+  v_window_start := NOW() - (v_config.window_seconds || ' seconds')::INTERVAL;
+
+  -- Count recent requests
+  SELECT COUNT(*) INTO v_count
+  FROM api.rate_limits
+  WHERE identifier = p_identifier
+    AND action = p_action
+    AND created_at > v_window_start;
+
+  -- Check if over limit
+  IF v_count >= v_config.max_requests THEN
+    RAISE EXCEPTION 'Rate limit exceeded for %. Please wait before trying again.', p_action
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- Record this request
+  INSERT INTO api.rate_limits (identifier, action)
+  VALUES (p_identifier, p_action);
+
+  RETURN TRUE;
+END;
+$$;
+
+-- ============================================
+-- FUNCTION: Cleanup old rate limit entries
+-- Should be called periodically (e.g., via pg_cron)
+-- ============================================
+CREATE OR REPLACE FUNCTION api.cleanup_rate_limits()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = api, public
+AS $$
+DECLARE
+  v_deleted INTEGER;
+BEGIN
+  -- Delete entries older than 1 hour (well beyond any window)
+  DELETE FROM api.rate_limits
+  WHERE created_at < NOW() - INTERVAL '1 hour';
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS api.quotes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   slug TEXT UNIQUE NOT NULL,
@@ -147,6 +258,7 @@ $$;
 -- FUNCTION: Get quote by slug (PUBLIC ACCESS)
 -- This is the ONLY way to access quotes publicly
 -- Returns quote data without sensitive fields
+-- Includes rate limiting to prevent enumeration attacks
 -- ============================================
 CREATE OR REPLACE FUNCTION api.get_quote_by_slug(p_slug TEXT)
 RETURNS TABLE (
@@ -172,7 +284,19 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = api, public
 AS $$
+DECLARE
+  v_client_ip TEXT;
 BEGIN
+  -- Get client IP for rate limiting (falls back to 'anonymous' if not available)
+  v_client_ip := COALESCE(
+    current_setting('request.headers', true)::json->>'x-forwarded-for',
+    current_setting('request.headers', true)::json->>'x-real-ip',
+    'anonymous'
+  );
+
+  -- Check rate limit using IP address (for public access)
+  PERFORM api.check_rate_limit(api.hash_token(v_client_ip), 'get_quote_by_slug');
+
   -- Only return quotes that have been sent (not drafts)
   -- This prevents accessing work-in-progress quotes
   RETURN QUERY
@@ -191,6 +315,7 @@ $$;
 -- ============================================
 -- FUNCTION: Create quote with hashed token
 -- Handles token hashing server-side for security
+-- Includes rate limiting to prevent spam
 -- ============================================
 CREATE OR REPLACE FUNCTION api.create_quote(
   p_token TEXT,  -- Plaintext device token (will be hashed)
@@ -230,6 +355,9 @@ BEGIN
   -- Hash the token server-side
   v_token_hash := api.hash_token(p_token);
 
+  -- Check rate limit (uses hashed token as identifier)
+  PERFORM api.check_rate_limit(v_token_hash, 'create_quote');
+
   INSERT INTO api.quotes (
     owner_token_hash,
     slug,
@@ -268,6 +396,7 @@ $$;
 -- ============================================
 
 -- Secure Update: Requires matching owner_token (hashed)
+-- Includes rate limiting to prevent abuse
 CREATE OR REPLACE FUNCTION api.update_quote_anon(
   p_id UUID,
   p_token TEXT,  -- Plaintext token from client (will be hashed for comparison)
@@ -284,6 +413,9 @@ DECLARE
 BEGIN
   -- Hash the provided token for comparison
   v_token_hash := api.hash_token(p_token);
+
+  -- Check rate limit
+  PERFORM api.check_rate_limit(v_token_hash, 'update_quote_anon');
 
   -- Validate status if provided
   v_status := p_payload->>'status';
@@ -317,6 +449,7 @@ $$;
 
 -- Secure Delete: Requires matching owner_token (hashed)
 -- Only allows deleting DRAFT quotes without children (versions)
+-- Includes rate limiting to prevent abuse
 CREATE OR REPLACE FUNCTION api.delete_quote_anon(
   p_id UUID,
   p_token TEXT  -- Plaintext token from client (will be hashed for comparison)
@@ -331,6 +464,9 @@ DECLARE
 BEGIN
   -- Hash the provided token for comparison
   v_token_hash := api.hash_token(p_token);
+
+  -- Check rate limit
+  PERFORM api.check_rate_limit(v_token_hash, 'delete_quote_anon');
 
   -- Only delete if: draft status AND no children (versions)
   DELETE FROM api.quotes
@@ -350,6 +486,7 @@ $$;
 -- FUNCTION: Bind all quotes from device to user (single token)
 -- Called after user registers/logs in
 -- SECURITY: Only the authenticated user can bind quotes to themselves
+-- Includes rate limiting (sensitive operation)
 -- ============================================
 CREATE OR REPLACE FUNCTION api.bind_device_quotes_to_user(
   p_device_token TEXT  -- Plaintext token from client (will be hashed for comparison)
@@ -372,6 +509,9 @@ BEGIN
 
   -- Hash the provided token for comparison
   v_token_hash := api.hash_token(p_device_token);
+
+  -- Check rate limit (use user_id for authenticated operations)
+  PERFORM api.check_rate_limit(v_user_id::TEXT, 'bind_device_quotes');
 
   -- Bind all quotes with this device token to the authenticated user
   UPDATE api.quotes
@@ -436,6 +576,7 @@ $$;
 -- FUNCTION: Get quotes by device token
 -- For listing user's quotes before login
 -- NOTE: Returns quotes without exposing owner_token_hash
+-- Includes rate limiting
 -- ============================================
 CREATE OR REPLACE FUNCTION api.get_device_quotes(
   p_device_token TEXT  -- Plaintext token from client (will be hashed for comparison)
@@ -471,6 +612,9 @@ DECLARE
 BEGIN
   -- Hash the provided token for comparison
   v_token_hash := api.hash_token(p_device_token);
+
+  -- Check rate limit
+  PERFORM api.check_rate_limit(v_token_hash, 'get_device_quotes');
 
   RETURN QUERY
   SELECT
@@ -613,3 +757,13 @@ GRANT EXECUTE ON FUNCTION api.get_public_profile(UUID) TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA api TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA api TO service_role;
 GRANT ALL ON ALL ROUTINES IN SCHEMA api TO service_role;
+
+-- ============================================
+-- RATE LIMIT TABLE PERMISSIONS
+-- Only service_role can directly modify rate limit config
+-- RPC functions handle rate_limits table internally
+-- ============================================
+GRANT SELECT ON api.rate_limit_config TO anon, authenticated;
+GRANT SELECT, INSERT ON api.rate_limits TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.check_rate_limit(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.cleanup_rate_limits() TO service_role;
