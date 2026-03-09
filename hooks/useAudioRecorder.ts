@@ -29,6 +29,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedDurationRef = useRef<number>(0);
+  const stopRecordingRef = useRef<() => void>(() => {});
 
   const triggerHaptic = useCallback(() => {
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -42,7 +43,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       setDuration(Math.floor(elapsed / 1000));
 
       if (elapsed >= MAX_DURATION_MS) {
-        stopRecording();
+        stopRecordingRef.current();
       }
     }, 100);
   }, []);
@@ -161,6 +162,9 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       triggerHaptic();
     }
   }, [isRecording, stopTimer, triggerHaptic]);
+
+  // Keep ref in sync so startTimer's interval always calls the latest version
+  stopRecordingRef.current = stopRecording;
 
   const pauseRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording && !isPaused) {

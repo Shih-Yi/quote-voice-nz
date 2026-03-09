@@ -40,6 +40,7 @@ export interface Quote {
   status: "draft" | "sent" | "accepted";
   createdAt: string;
   updatedAt: string;
+  ownerProfile?: UserProfile;  // Fetched from Supabase for public quote views
 }
 
 export interface PendingAudio {
