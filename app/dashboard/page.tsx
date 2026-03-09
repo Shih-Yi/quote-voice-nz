@@ -2,21 +2,33 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { v4 as uuidv4 } from "uuid";
 import { MobileShell } from "@/components/layout/MobileShell";
 import { VoiceRecorder } from "@/components/voice/VoiceRecorder";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getRecentQuotes } from "@/lib/storage/quotes";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { getRecentQuotes, saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
 import type { Quote } from "@/types/quote";
 
 export default function Dashboard() {
+  const router = useRouter();
   const [quoteGroups, setQuoteGroups] = useState<QuoteGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { pendingCount, isSyncing, syncAll, refreshPending } = useOfflineStorage();
+  const [failedIds, setFailedIds] = useState<string[]>([]);
+  const { pendingCount, isSyncing, syncAll, discardPendingByIds, refreshPending } = useOfflineStorage();
 
   useEffect(() => {
     async function loadData() {
@@ -44,11 +56,68 @@ export default function Dashboard() {
 
   const handleSync = async () => {
     toast.info("Syncing pending quotes...");
-    await syncAll();
+    const { successCount, failCount, unrecoverableIds, lastError } = await syncAll();
+
     const quotes = await getRecentQuotes(20);
     const groups = groupQuotesByVersion(quotes);
     setQuoteGroups(groups.slice(0, 5));
-    toast.success("Sync complete!");
+
+    // Show dialog for unrecoverable items (no speech / too short)
+    if (unrecoverableIds.length > 0) {
+      setFailedIds(unrecoverableIds);
+    }
+
+    if (successCount > 0) {
+      toast.success(`Synced ${successCount} ${successCount === 1 ? "quote" : "quotes"} successfully!`);
+    }
+    if (failCount > 0) {
+      toast.error(`${failCount} failed: ${lastError || "Unknown error"}`);
+    }
+  };
+
+  const handleCreateEmptyDrafts = async () => {
+    const idsToProcess = [...failedIds];
+    let lastCreatedId: string | undefined;
+
+    for (const _pendingId of idsToProcess) {
+      const quoteId = uuidv4();
+      const slug = await generateSlug();
+      const quote: Quote = {
+        id: quoteId,
+        customerName: "Customer",
+        items: [],
+        gstInclusive: false,
+        subtotal: 0,
+        gst: 0,
+        total: 0,
+        status: "draft",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        slug,
+      };
+      await saveQuote(quote);
+      lastCreatedId = quoteId;
+    }
+
+    await discardPendingByIds(idsToProcess);
+    setFailedIds([]);
+
+    const quotes = await getRecentQuotes(20);
+    const groups = groupQuotesByVersion(quotes);
+    setQuoteGroups(groups.slice(0, 5));
+
+    if (idsToProcess.length === 1 && lastCreatedId) {
+      // Single item — go straight to edit
+      router.push(`/quote/${lastCreatedId}`);
+    } else {
+      toast.success(`Created ${idsToProcess.length} empty drafts. Tap to edit.`);
+    }
+  };
+
+  const handleDiscardFailed = async () => {
+    await discardPendingByIds(failedIds);
+    setFailedIds([]);
+    toast.success("Discarded.");
   };
 
   return (
@@ -127,6 +196,39 @@ export default function Dashboard() {
           </Button>
         )}
       </div>
+
+      {/* Failed Sync Dialog */}
+      <Dialog open={failedIds.length > 0} onOpenChange={(open) => !open && setFailedIds([])}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {failedIds.length === 1
+                ? "Recording has no speech"
+                : `${failedIds.length} recordings have no speech`}
+            </DialogTitle>
+            <DialogDescription>
+              {failedIds.length === 1
+                ? "This recording was too short or had no detectable speech. Would you like to create an empty draft to fill in manually?"
+                : `These ${failedIds.length} recordings were too short or had no detectable speech. Would you like to create empty drafts to fill in manually?`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button onClick={handleCreateEmptyDrafts} className="w-full">
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              {failedIds.length === 1 ? "Create Empty Draft" : `Create ${failedIds.length} Empty Drafts`}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDiscardFailed}
+              className="w-full text-red-500 border-red-200 hover:bg-red-50"
+            >
+              Discard {failedIds.length === 1 ? "Recording" : "Recordings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MobileShell>
   );
 }

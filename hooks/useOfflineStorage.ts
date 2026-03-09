@@ -7,10 +7,29 @@ import { calculateQuoteTotals } from "@/lib/utils/gst";
 import { v4 as uuidv4 } from "uuid";
 import type { Quote, PendingAudio, ExtractionResult } from "@/types/quote";
 
+// Errors that won't succeed on retry — the audio itself is the problem
+const UNRECOVERABLE_ERRORS = [
+  "Text too short",
+  "No speech detected",
+  "No audio file provided",
+];
+
+function isUnrecoverable(error: string): boolean {
+  return UNRECOVERABLE_ERRORS.some((e) => error.includes(e));
+}
+
+interface SyncResult {
+  successCount: number;
+  failCount: number;
+  unrecoverableIds: string[];
+  lastError?: string;
+}
+
 interface UseOfflineStorageResult {
   pendingCount: number;
   isSyncing: boolean;
-  syncAll: () => Promise<void>;
+  syncAll: () => Promise<SyncResult>;
+  discardPendingByIds: (ids: string[]) => Promise<void>;
   refreshPending: () => Promise<void>;
 }
 
@@ -27,7 +46,7 @@ export function useOfflineStorage(): UseOfflineStorageResult {
     refreshPending();
   }, [refreshPending]);
 
-  const syncSingle = useCallback(async (item: PendingAudio): Promise<boolean> => {
+  const syncSingle = useCallback(async (item: PendingAudio): Promise<{ success: boolean; error?: string }> => {
     try {
       const formData = new FormData();
       formData.append("audio", item.blob, "recording.webm");
@@ -38,7 +57,8 @@ export function useOfflineStorage(): UseOfflineStorageResult {
       });
 
       if (!transcribeRes.ok) {
-        throw new Error("Transcription failed");
+        const errBody = await transcribeRes.json().catch(() => ({}));
+        throw new Error(errBody.error || `Transcription failed (${transcribeRes.status})`);
       }
 
       const { text } = await transcribeRes.json();
@@ -54,7 +74,8 @@ export function useOfflineStorage(): UseOfflineStorageResult {
       });
 
       if (!extractRes.ok) {
-        throw new Error("Extraction failed");
+        const errBody = await extractRes.json().catch(() => ({}));
+        throw new Error(errBody.error || `Extraction failed (${extractRes.status})`);
       }
 
       const extraction: ExtractionResult = await extractRes.json();
@@ -93,40 +114,55 @@ export function useOfflineStorage(): UseOfflineStorageResult {
       await saveQuote(quote);
       await removePendingAudio(item.id);
 
-      return true;
-    } catch {
-      return false;
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[Sync] Failed to sync item ${item.id}:`, message, error);
+      return { success: false, error: message };
     }
   }, []);
 
-  const syncAll = useCallback(async () => {
+  const syncAll = useCallback(async (): Promise<SyncResult> => {
     setIsSyncing(true);
 
     try {
       const pending = await getPendingAudio();
       let successCount = 0;
+      const unrecoverableIds: string[] = [];
+      let lastError: string | undefined;
 
       for (const item of pending) {
-        const success = await syncSingle(item);
-        if (success) {
+        const result = await syncSingle(item);
+        if (result.success) {
           successCount++;
+        } else if (result.error && isUnrecoverable(result.error)) {
+          unrecoverableIds.push(item.id);
+        } else {
+          lastError = result.error;
         }
       }
 
       await refreshPending();
 
-      if (successCount > 0) {
-        console.log(`Synced ${successCount} of ${pending.length} items`);
-      }
+      const failCount = pending.length - successCount - unrecoverableIds.length;
+      return { successCount, failCount, unrecoverableIds, lastError };
     } finally {
       setIsSyncing(false);
     }
   }, [syncSingle, refreshPending]);
 
+  const discardPendingByIds = useCallback(async (ids: string[]) => {
+    for (const id of ids) {
+      await removePendingAudio(id);
+    }
+    await refreshPending();
+  }, [refreshPending]);
+
   return {
     pendingCount,
     isSyncing,
     syncAll,
+    discardPendingByIds,
     refreshPending,
   };
 }
