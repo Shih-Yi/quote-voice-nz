@@ -53,7 +53,7 @@
 
 ---
 
-## ❌ TODO (Not Yet Implemented)
+## ✅ TODO (All Implemented!)
 
 ### High Priority
 - [x] **Testing** — 101 tests across 11 files (Vitest + React Testing Library)
@@ -71,10 +71,10 @@
 - [x] **Signature capture** — canvas-based touch signature pad with data URL storage
 - [x] **Image attachments** — site photos (up to 10, 5MB each) stored as data URLs in IndexedDB
 - [x] **Custom item templates** — pre-defined + user-saved line item templates with categories
-- [ ] **Bulk quote operations** — batch delete/export
-- [ ] **Revenue dashboard** — income stats, customer history
-- [ ] **Admin panel** — user management, audit logs
-- [ ] **i18n** — internationalisation beyond NZ English
+- [x] **Bulk quote operations** — select, batch delete, CSV export on quotes page
+- [x] **Revenue dashboard** — monthly chart, conversion rate, top customers, status breakdown
+- [x] **Admin panel** — system stats, audit log with filters, management links
+- [x] **i18n** — framework with en-NZ + te reo Maori (mi-NZ), language switcher in Settings
 
 ---
 
@@ -82,9 +82,10 @@
 
 | Metric            | Value              |
 | ----------------- | ------------------ |
-| Lines of code     | ~8,000+            |
-| React components  | ~62                |
+| Lines of code     | ~10,000+           |
+| React components  | ~68                |
 | API routes        | 3 (transcribe, extract, send-quote) |
-| Pages             | 6                  |
-| Custom hooks      | 4                  |
+| Pages             | 9                  |
+| Custom hooks      | 5                  |
 | npm packages      | 24                 |
+| i18n locales      | 2 (en-NZ, mi-NZ)  |

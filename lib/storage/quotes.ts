@@ -9,6 +9,7 @@ import {
 } from "@/lib/supabase/quotes";
 import { getDeviceToken } from "./deviceToken";
 import { preCacheQuotePage } from "@/lib/utils/swCache";
+import { logAudit } from "@/lib/utils/auditLog";
 
 const QUOTES_KEY = "ksq_quotes";
 
@@ -69,6 +70,8 @@ export async function saveQuote(quote: Quote): Promise<{ synced: boolean }> {
   // 2. Try to sync to Supabase (non-blocking)
   const result = await saveQuoteToSupabase(updatedQuote, deviceToken);
 
+  logAudit("quote.created", "quote", updatedQuote.id, updatedQuote.customerName);
+
   return { synced: result.success };
 }
 
@@ -97,6 +100,8 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
   // 2. Get device token and sync to Supabase
   const deviceToken = await getDeviceToken();
   const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
+
+  logAudit("quote.updated", "quote", quote.id, quote.customerName);
 
   return { synced: result.success, error: result.error };
 }
@@ -127,6 +132,8 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
   if (updatedQuote.slug) {
     preCacheQuotePage(updatedQuote.slug);
   }
+
+  logAudit("quote.sent", "quote", quoteId, updatedQuote.customerName);
 
   return { synced: result.success };
 }
@@ -163,6 +170,8 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   // Save the duplicate
   await saveQuote(newQuote);
 
+  logAudit("quote.duplicated", "quote", newQuote.id, `V${nextVersion} from ${quoteId}`);
+
   return newQuote;
 }
 
@@ -196,12 +205,15 @@ export async function unlockQuoteForEditing(quoteId: string): Promise<{ success:
 export async function deleteQuote(id: string): Promise<void> {
   // Delete locally
   const quotes = await getAllQuotes();
+  const deleted = quotes.find((q) => q.id === id);
   const filtered = quotes.filter((q) => q.id !== id);
   await set(QUOTES_KEY, filtered);
 
   // Get device token and try to delete from Supabase
   const deviceToken = await getDeviceToken();
   await deleteQuoteFromSupabase(id, deviceToken);
+
+  logAudit("quote.deleted", "quote", id, deleted?.customerName);
 }
 
 // Get recent quotes (local)

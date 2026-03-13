@@ -144,11 +144,18 @@ export default function Dashboard() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-text">Recent Quotes</h2>
-            {quoteGroups.length > 0 && (
-              <Link href="/quotes" className="text-sm text-primary hover:text-primary-dark">
-                View all
-              </Link>
-            )}
+            <div className="flex items-center gap-3">
+              {quoteGroups.length > 0 && (
+                <Link href="/revenue" className="text-sm text-secondary hover:text-secondary/80">
+                  Revenue
+                </Link>
+              )}
+              {quoteGroups.length > 0 && (
+                <Link href="/quotes" className="text-sm text-primary hover:text-primary-dark">
+                  View all
+                </Link>
+              )}
+            </div>
           </div>
 
           {isLoading ? (

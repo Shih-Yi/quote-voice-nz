@@ -69,6 +69,15 @@ export function Header({
                     <Button
                       variant="ghost"
                       size="sm"
+                      asChild
+                      className="text-text-muted hover:text-text hidden sm:flex"
+                    >
+                      <Link href="/admin">Admin</Link>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={handleLogout}
                       className="text-text-muted hover:text-text"
                     >
