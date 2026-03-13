@@ -7,15 +7,14 @@ import { MobileShell } from "@/components/layout/MobileShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
-import { getAllQuotes, countLocalQuotes } from "@/lib/storage/quotes";
+import { countLocalQuotes } from "@/lib/storage/quotes";
 import { getTemplates } from "@/lib/storage/templates";
 import { getAuditLog, clearAuditLog, formatAuditAction, getAuditActionColour, type AuditEntry } from "@/lib/utils/auditLog";
 import { formatNZDateTime } from "@/lib/utils/date";
 
 export default function AdminPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [stats, setStats] = useState({
     localQuotes: 0,

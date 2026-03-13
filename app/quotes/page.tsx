@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getAllQuotes } from "@/lib/storage/quotes";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { BulkQuoteActions, SelectableQuote } from "@/components/quote/BulkQuoteActions";
-import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
+import { groupQuotesByVersion } from "@/lib/utils/quoteVersions";
 import type { Quote } from "@/types/quote";
 
 export default function QuotesPage() {

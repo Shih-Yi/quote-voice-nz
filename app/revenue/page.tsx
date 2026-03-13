@@ -9,7 +9,6 @@ import { getAllQuotes } from "@/lib/storage/quotes";
 import { calculateRevenue, type RevenueOverview } from "@/lib/utils/revenue";
 import { formatNZD } from "@/lib/utils/currency";
 import { formatRelativeTime } from "@/lib/utils/date";
-import type { Quote } from "@/types/quote";
 
 export default function RevenuePage() {
   const [isLoading, setIsLoading] = useState(true);

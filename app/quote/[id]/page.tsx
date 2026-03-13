@@ -10,7 +10,6 @@ import { QuotePreview } from "@/components/quote/QuotePreview";
 import { QuotePDF } from "@/components/quote/QuotePDF";
 import { QuoteShare } from "@/components/quote/QuoteShare";
 import { EditSentQuoteDialog } from "@/components/quote/EditSentQuoteDialog";
-import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { QuoteVersionDiff } from "@/components/quote/QuoteVersionDiff";
@@ -35,7 +34,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const [showEditSentDialog, setShowEditSentDialog] = useState(false);
   const [showVersionDiff, setShowVersionDiff] = useState(false);
   const [versionHistory, setVersionHistory] = useState<Quote[]>([]);
-  const { user, loading: authLoading, signUp, signIn, signInGoogle } = useAuth();
+  const { user, signUp, signIn, signInGoogle } = useAuth();
 
   useEffect(() => {
     async function loadQuote() {
