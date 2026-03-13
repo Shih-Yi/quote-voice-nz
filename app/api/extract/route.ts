@@ -3,6 +3,7 @@ import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { extractionSchema } from "@/lib/schemas/quote";
 import { rateLimit } from "@/lib/rateLimit";
+import { captureError } from "@/lib/sentry";
 
 const SYSTEM_PROMPT = `You are a quote extraction assistant for New Zealand tradies (plumbers, electricians, landscapers, etc.).
 
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.object);
   } catch (error) {
     console.error("Extraction error:", error);
+    captureError(error, { route: "/api/extract" });
 
     if (error instanceof Error) {
       console.error("Error message:", error.message);

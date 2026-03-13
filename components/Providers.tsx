@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect } from "react";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { initSentry } from "@/lib/sentry";
 
 function useServiceWorker() {
   useEffect(() => {
@@ -14,6 +15,9 @@ function useServiceWorker() {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    initSentry();
+  }, []);
   useServiceWorker();
   return <AuthProvider>{children}</AuthProvider>;
 }
