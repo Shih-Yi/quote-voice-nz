@@ -1,6 +1,6 @@
 # KiwiSpeakQuote (KSQ) — Project TODO
 
-> Last updated: 10/02/2026
+> Last updated: 13/03/2026
 
 ---
 
@@ -57,20 +57,20 @@
 
 ### High Priority
 - [x] **Testing** — 101 tests across 11 files (Vitest + React Testing Library)
-- [ ] **Service Worker** — offline caching (currently PWA manifest only)
-- [ ] **Audio compression** — client-side MP3 conversion before upload
-- [ ] **API rate limiting** — middleware on API routes
+- [x] **Service Worker** — offline caching with precache + runtime strategies
+- [x] **Audio compression** — client-side MP3 conversion via lamejs before upload
+- [x] **API rate limiting** — in-memory rate limiter on all API routes
 
 ### Medium Priority
-- [ ] **Email delivery** — automated quote sending (currently manual share only)
-- [ ] **"Accept Quote" flow** — customer-facing confirmation/completion logic
-- [ ] **Version diff view** — compare changes between quote versions
-- [ ] **Error monitoring/analytics** — usage metrics, error rate tracking
+- [x] **Email delivery** — Resend integration with branded HTML email template
+- [x] **"Accept Quote" flow** — customer-facing accept button on public quote URL
+- [x] **Version diff view** — field, item, and total diff between quote versions
+- [x] **Error monitoring** — Sentry integration (client + server, PII-stripped)
 
 ### Low Priority
-- [ ] **Signature capture** — customer signature on quotes
-- [ ] **Image attachments** — site photos in quotes
-- [ ] **Custom item templates** — frequently used line items
+- [x] **Signature capture** — canvas-based touch signature pad with data URL storage
+- [x] **Image attachments** — site photos (up to 10, 5MB each) stored as data URLs in IndexedDB
+- [x] **Custom item templates** — pre-defined + user-saved line item templates with categories
 - [ ] **Bulk quote operations** — batch delete/export
 - [ ] **Revenue dashboard** — income stats, customer history
 - [ ] **Admin panel** — user management, audit logs
@@ -82,9 +82,9 @@
 
 | Metric            | Value              |
 | ----------------- | ------------------ |
-| Lines of code     | ~6,000+            |
-| React components  | ~55                |
-| API routes        | 2 (transcribe, extract) |
+| Lines of code     | ~8,000+            |
+| React components  | ~62                |
+| API routes        | 3 (transcribe, extract, send-quote) |
 | Pages             | 6                  |
 | Custom hooks      | 4                  |
-| npm packages      | 22                 |
+| npm packages      | 24                 |

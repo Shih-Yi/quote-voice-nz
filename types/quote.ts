@@ -41,6 +41,26 @@ export interface Quote {
   createdAt: string;
   updatedAt: string;
   ownerProfile?: UserProfile;  // Fetched from Supabase for public quote views
+
+  // Rich content
+  signatureDataUrl?: string;   // Customer signature (PNG data URL)
+  attachments?: QuoteAttachment[];  // Site photos / documents
+}
+
+export interface QuoteAttachment {
+  id: string;
+  name: string;
+  dataUrl: string;   // Base64 data URL (stored in IndexedDB)
+  mimeType: string;
+  size: number;       // bytes
+  createdAt: string;
+}
+
+export interface ItemTemplate {
+  id: string;
+  description: string;
+  unitPrice: number;
+  category?: string;
 }
 
 export interface PendingAudio {
