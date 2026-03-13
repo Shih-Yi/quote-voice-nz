@@ -10,6 +10,7 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { addPendingAudio } from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
+import { compressToMp3 } from "@/lib/utils/audioCompress";
 import type { Quote, ExtractionResult } from "@/types/quote";
 
 interface VoiceRecorderProps {
@@ -52,17 +53,17 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
 
         toast.success("Draft saved locally");
 
+        setProcessingStatus("Compressing audio...");
+
+        // Compress to MP3 before upload (saves bandwidth on mobile)
+        const mp3Blob = await compressToMp3(blob);
+
         setProcessingStatus("Transcribing audio...");
 
         // Try to transcribe
         const formData = new FormData();
-        // Determine extension based on blob type
-        let extension = "webm";
-        if (blob.type.includes("mp4")) extension = "mp4";
-        else if (blob.type.includes("aac")) extension = "aac";
-        else if (blob.type.includes("ogg")) extension = "ogg";
-        
-        formData.append("audio", blob, `recording.${extension}`);
+        const isMp3 = mp3Blob.type === "audio/mpeg";
+        formData.append("audio", mp3Blob, isMp3 ? "recording.mp3" : "recording.webm");
 
         const transcribeRes = await fetch("/api/transcribe", {
           method: "POST",

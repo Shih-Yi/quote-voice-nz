@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 10 transcriptions per minute per IP
+  const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
+  if (rateLimited) return rateLimited;
+
   try {
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(

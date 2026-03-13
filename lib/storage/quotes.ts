@@ -8,6 +8,7 @@ import {
   getQuoteByIdFromSupabase,
 } from "@/lib/supabase/quotes";
 import { getDeviceToken } from "./deviceToken";
+import { preCacheQuotePage } from "@/lib/utils/swCache";
 
 const QUOTES_KEY = "ksq_quotes";
 
@@ -121,6 +122,11 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
   // Sync to Supabase
   const deviceToken = await getDeviceToken();
   const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
+
+  // Pre-cache the public quote page for offline sharing
+  if (updatedQuote.slug) {
+    preCacheQuotePage(updatedQuote.slug);
+  }
 
   return { synced: result.success };
 }
