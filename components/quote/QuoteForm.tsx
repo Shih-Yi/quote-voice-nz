@@ -10,9 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { QuoteItem } from "./QuoteItem";
 import { ProviderInfo } from "./ProviderInfo";
+import { SignaturePad } from "./SignaturePad";
+import { QuoteAttachments } from "./QuoteAttachments";
+import { ItemTemplates } from "./ItemTemplates";
 import { formatNZD } from "@/lib/utils/currency";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
-import type { Quote, LineItem, UserProfile } from "@/types/quote";
+import type { Quote, LineItem, QuoteAttachment, UserProfile } from "@/types/quote";
 
 interface QuoteFormProps {
   quote: Quote;
@@ -105,6 +108,42 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
     }));
   }, []);
 
+  const handleAddTemplateItem = useCallback((description: string, unitPrice: number) => {
+    const newItem: LineItem = {
+      id: uuidv4(),
+      description,
+      quantity: 1,
+      unitPrice,
+      total: unitPrice,
+    };
+    setQuote((prev) => {
+      const items = [...prev.items, newItem];
+      const totals = updateTotals(items, gstInclusive);
+      return {
+        ...prev,
+        items,
+        ...totals,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  }, [gstInclusive, updateTotals]);
+
+  const handleSignatureChange = useCallback((dataUrl: string | undefined) => {
+    setQuote((prev) => ({
+      ...prev,
+      signatureDataUrl: dataUrl,
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+  const handleAttachmentsChange = useCallback((attachments: QuoteAttachment[]) => {
+    setQuote((prev) => ({
+      ...prev,
+      attachments,
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
   const handleGstToggle = useCallback(() => {
     setGstInclusive((prev) => {
       const newValue = !prev;
@@ -190,9 +229,12 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Quote Items</CardTitle>
-            <Button size="sm" variant="outline" onClick={handleAddItem}>
-              + Add Item
-            </Button>
+            <div className="flex gap-1">
+              <ItemTemplates onSelect={handleAddTemplateItem} />
+              <Button size="sm" variant="outline" onClick={handleAddItem}>
+                + Add Item
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -225,6 +267,32 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
             onChange={(e) => handleFieldChange("notes", e.target.value)}
             placeholder="Additional notes or special instructions..."
             rows={3}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Attachments */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Site Photos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <QuoteAttachments
+            attachments={quote.attachments || []}
+            onChange={handleAttachmentsChange}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Customer Signature */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Customer Signature</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignaturePad
+            value={quote.signatureDataUrl}
+            onChange={handleSignatureChange}
           />
         </CardContent>
       </Card>

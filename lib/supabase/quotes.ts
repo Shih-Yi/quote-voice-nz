@@ -84,6 +84,9 @@ function toSupabaseFormat(quote: Quote, deviceToken: string): Record<string, unk
     notes: quote.notes || null,
     gst_inclusive: quote.gstInclusive,
     items_sum: itemsSum,
+    subtotal: quote.subtotal,
+    gst: quote.gst,
+    total: quote.total,
     status: quote.status,
     parent_id: quote.parentId || null,   // Version tracking
     version: quote.version || 1,          // Default to V1
@@ -183,6 +186,9 @@ export async function updateQuoteInSupabase(
       notes: quote.notes || null,
       gst_inclusive: quote.gstInclusive,
       items_sum: itemsSum,
+      subtotal: quote.subtotal,
+      gst: quote.gst,
+      total: quote.total,
       status: quote.status,
     };
 

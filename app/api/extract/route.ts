@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { extractionSchema } from "@/lib/schemas/quote";
+import { rateLimit } from "@/lib/rateLimit";
+import { captureError } from "@/lib/sentry";
 
 const SYSTEM_PROMPT = `You are a quote extraction assistant for New Zealand tradies (plumbers, electricians, landscapers, etc.).
 
@@ -43,6 +45,10 @@ If something is unclear, use your best judgment but lower the confidence.
 If no price is mentioned for an item, estimate based on common NZ trade rates or set to 0.`;
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 15 extractions per minute per IP
+  const rateLimited = rateLimit(request, { limit: 15, windowSeconds: 60 });
+  if (rateLimited) return rateLimited;
+
   try {
     if (!process.env.OPENAI_API_KEY) {
       console.error("OPENAI_API_KEY is not set");
@@ -78,6 +84,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result.object);
   } catch (error) {
     console.error("Extraction error:", error);
+    captureError(error, { route: "/api/extract" });
 
     if (error instanceof Error) {
       console.error("Error message:", error.message);

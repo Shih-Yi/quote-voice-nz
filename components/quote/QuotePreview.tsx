@@ -109,6 +109,27 @@ export function QuotePreview({ quote, showHeader = true }: QuotePreviewProps) {
         </Card>
       )}
 
+      {/* Attachments */}
+      {quote.attachments && quote.attachments.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-text-muted">
+              Site Photos ({quote.attachments.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-2">
+              {quote.attachments.map((att) => (
+                <div key={att.id} className="aspect-square rounded-lg overflow-hidden border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Totals */}
       <Card>
         <CardContent className="pt-4">
@@ -129,6 +150,25 @@ export function QuotePreview({ quote, showHeader = true }: QuotePreviewProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Customer Signature */}
+      {quote.signatureDataUrl && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-text-muted">Customer Signature</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="border border-border rounded-lg p-2 bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={quote.signatureDataUrl}
+                alt="Customer signature"
+                className="max-h-24 mx-auto"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

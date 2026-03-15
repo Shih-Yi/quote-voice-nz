@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useCallback, use } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { QuoteItem } from "@/components/quote/QuoteItem";
 import { QuotePDF } from "@/components/quote/QuotePDF";
 import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
@@ -21,8 +22,28 @@ export default function PublicQuotePage({ params }: PageProps) {
   const resolvedParams = use(params);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAccepting, setIsAccepting] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { user, signUp, signIn, signInGoogle } = useAuth();
+
+  const handleAcceptQuote = useCallback(async () => {
+    if (!quote?.slug) return;
+    setIsAccepting(true);
+    try {
+      const res = await fetch("/api/accept-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: quote.slug }),
+      });
+      if (res.ok) {
+        setQuote((prev) => prev ? { ...prev, status: "accepted" } : prev);
+      }
+    } catch {
+      // Silent fail — customer can retry
+    } finally {
+      setIsAccepting(false);
+    }
+  }, [quote?.slug]);
 
   useEffect(() => {
     async function loadQuote() {
@@ -106,7 +127,15 @@ export default function PublicQuotePage({ params }: PageProps) {
             </p>
             {quote.status === "sent" && (
               <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                Sent
+                Awaiting Acceptance
+              </span>
+            )}
+            {quote.status === "accepted" && (
+              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+                Accepted
               </span>
             )}
           </div>
@@ -187,7 +216,7 @@ export default function PublicQuotePage({ params }: PageProps) {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-text-muted">
+        <div className="mt-8 text-center text-sm text-text-muted pb-24">
           <p>Generated with KiwiSpeakQuote</p>
           <p className="mt-1">
             <a href="/" className="text-primary hover:text-primary-dark">
@@ -196,6 +225,44 @@ export default function PublicQuotePage({ params }: PageProps) {
           </p>
         </div>
       </div>
+
+      {/* Sticky Accept Footer — only for "sent" quotes */}
+      {quote.status === "sent" && (
+        <div className="fixed bottom-0 inset-x-0 bg-white border-t border-border p-4 shadow-lg">
+          <div className="max-w-2xl mx-auto">
+            <Button
+              onClick={handleAcceptQuote}
+              disabled={isAccepting}
+              className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90"
+            >
+              {isAccepting ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Accept Quote — {formatNZD(quote.total)}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Accepted Confirmation */}
+      {quote.status === "accepted" && (
+        <div className="fixed bottom-0 inset-x-0 bg-green-50 border-t border-green-200 p-4">
+          <div className="max-w-2xl mx-auto text-center">
+            <p className="text-green-800 font-medium flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Quote accepted — the tradie has been notified
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

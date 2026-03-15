@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { rateLimit } from "@/lib/rateLimit";
+import { captureError } from "@/lib/sentry";
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 10 transcriptions per minute per IP
+  const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
+  if (rateLimited) return rateLimited;
+
   try {
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(
@@ -45,6 +51,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Transcription error:", error);
+    captureError(error, { route: "/api/transcribe" });
 
     if (error instanceof Error) {
       console.error("Error message:", error.message);

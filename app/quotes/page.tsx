@@ -1,44 +1,50 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { MobileShell } from "@/components/layout/MobileShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getAllQuotes } from "@/lib/storage/quotes";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
-import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
+import { BulkQuoteActions, SelectableQuote } from "@/components/quote/BulkQuoteActions";
+import { groupQuotesByVersion } from "@/lib/utils/quoteVersions";
 import type { Quote } from "@/types/quote";
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "sent" | "accepted">("all");
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const loadQuotes = useCallback(async () => {
+    try {
+      const data = await getAllQuotes();
+      setQuotes(data);
+    } catch (error) {
+      console.error("Failed to load quotes:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadQuotes() {
-      try {
-        const data = await getAllQuotes();
-        setQuotes(data);
-      } catch (error) {
-        console.error("Failed to load quotes:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
     loadQuotes();
-  }, []);
+  }, [loadQuotes]);
 
   // Group and filter quotes
   const filteredGroups = useMemo(() => {
-    // First filter quotes
     const filteredQuotes = filter === "all"
       ? quotes
       : quotes.filter((q) => q.status === filter);
-
-    // Then group them
     return groupQuotesByVersion(filteredQuotes);
   }, [quotes, filter]);
+
+  // Flat list for bulk operations
+  const allFilteredQuotes = useMemo(() => {
+    return filteredGroups.flatMap((g) => [g.latest, ...g.olderVersions]);
+  }, [filteredGroups]);
 
   // Count for display
   const totalCount = useMemo(() => {
@@ -47,6 +53,21 @@ export default function QuotesPage() {
       0
     );
   }, [filteredGroups]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkComplete = useCallback(() => {
+    setIsSelecting(false);
+    setSelectedIds(new Set());
+    loadQuotes();
+  }, [loadQuotes]);
 
   const filters: { label: string; value: typeof filter }[] = [
     { label: "All", value: "all" },
@@ -68,10 +89,57 @@ export default function QuotesPage() {
             </Link>
             <h1 className="text-xl font-bold text-text">All Quotes</h1>
           </div>
-          <span className="text-text-muted text-sm">
-            {totalCount} {totalCount === 1 ? "quote" : "quotes"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-text-muted text-sm">
+              {totalCount} {totalCount === 1 ? "quote" : "quotes"}
+            </span>
+            {allFilteredQuotes.length > 0 && !isSelecting && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsSelecting(true)}
+                className="text-text-muted text-xs"
+              >
+                Select
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Bulk Actions Bar */}
+        {isSelecting && (
+          <div className="bg-gray-50 rounded-lg p-2 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-text-muted font-medium">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (selectedIds.size === allFilteredQuotes.length) {
+                  setSelectedIds(new Set());
+                } else {
+                  setSelectedIds(new Set(allFilteredQuotes.map((q) => q.id)));
+                }
+              }}
+              className="text-xs h-7 px-2"
+            >
+              {selectedIds.size === allFilteredQuotes.length ? "Deselect All" : "Select All"}
+            </Button>
+            <BulkQuoteActions
+              quotes={allFilteredQuotes.filter((q) => selectedIds.has(q.id))}
+              onComplete={handleBulkComplete}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setIsSelecting(false); setSelectedIds(new Set()); }}
+              className="text-xs h-7 px-2 ml-auto"
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
@@ -111,11 +179,18 @@ export default function QuotesPage() {
         ) : (
           <div className="space-y-2">
             {filteredGroups.map((group) => (
-              <QuoteListItem
+              <SelectableQuote
                 key={group.latest.id}
-                quote={group.latest}
-                olderVersions={group.olderVersions}
-              />
+                quoteId={group.latest.id}
+                isSelecting={isSelecting}
+                isSelected={selectedIds.has(group.latest.id)}
+                onToggle={toggleSelect}
+              >
+                <QuoteListItem
+                  quote={group.latest}
+                  olderVersions={group.olderVersions}
+                />
+              </SelectableQuote>
             ))}
           </div>
         )}
