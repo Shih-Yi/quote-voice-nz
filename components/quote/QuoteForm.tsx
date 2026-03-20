@@ -165,7 +165,13 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
   }, [quote, shouldUpdateProfile, onSave]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleSave();
+      }}
+      className="flex flex-col gap-4"
+    >
       {/* Provider Details (My Business) */}
       <ProviderInfo 
         providerDetails={quote.providerDetails} 
@@ -332,13 +338,6 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
         </CardContent>
       </Card>
 
-      {/* Save Button */}
-      <Button
-        onClick={handleSave}
-        className="w-full bg-primary hover:bg-primary-dark text-white py-6 text-lg"
-      >
-        Save Quote
-      </Button>
-    </div>
+    </form>
   );
 }

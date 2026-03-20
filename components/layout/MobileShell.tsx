@@ -17,17 +17,17 @@ export function MobileShell({
   hideHeader = false
 }: MobileShellProps) {
   return (
-    <div className="min-h-dvh flex flex-col bg-background">
+    <div className="h-dvh flex flex-col bg-background overflow-hidden">
       {!hideHeader && <Header pendingCount={pendingCount} />}
 
-      <main className="flex-1 flex flex-col">
-        <div className="flex-1 max-w-2xl mx-auto w-full px-4 py-4">
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto w-full px-4 py-4">
           {children}
         </div>
       </main>
 
       {footer && (
-        <footer className="sticky bottom-0 bg-white border-t border-border px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <footer className="shrink-0 bg-white border-t border-border px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] z-10">
           <div className="max-w-2xl mx-auto">
             {footer}
           </div>
