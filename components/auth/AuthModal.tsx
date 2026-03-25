@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 interface AuthModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultTab?: "login" | "register";
   onSignUp: (email: string, password: string) => Promise<{ error: string | null }>;
   onSignIn: (email: string, password: string) => Promise<{ error: string | null }>;
   onSignInGoogle: () => Promise<{ error: string | null }>;
@@ -25,11 +26,18 @@ type Mode = "signin" | "signup";
 export function AuthModal({
   open,
   onOpenChange,
+  defaultTab,
   onSignUp,
   onSignIn,
   onSignInGoogle,
 }: AuthModalProps) {
-  const [mode, setMode] = useState<Mode>("signup");
+  const [mode, setMode] = useState<Mode>(defaultTab === "login" ? "signin" : "signup");
+
+  useEffect(() => {
+    if (defaultTab) {
+      setMode(defaultTab === "login" ? "signin" : "signup");
+    }
+  }, [defaultTab]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -48,6 +48,7 @@ export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onSho
       if (user) {
         // Logged in: Try to fetch profile
         const supabase = getSupabase();
+        if (!supabase) return;
         const { data } = await supabase
           .from("profiles")
           .select("*")
