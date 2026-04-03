@@ -277,19 +277,6 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
         </CardContent>
       </Card>
 
-      {/* Attachments */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Site Photos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <QuoteAttachments
-            attachments={quote.attachments || []}
-            onChange={handleAttachmentsChange}
-          />
-        </CardContent>
-      </Card>
-
       {/* Customer Signature */}
       <Card>
         <CardHeader className="pb-3">

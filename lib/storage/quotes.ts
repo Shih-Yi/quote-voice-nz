@@ -101,9 +101,14 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
   const deviceToken = await getDeviceToken();
   const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
 
+  if (!result.success) {
+    console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
+  }
+
   logAudit("quote.updated", "quote", quote.id, quote.customerName);
 
-  return { synced: result.success, error: result.error };
+  // Local save already succeeded — don't surface cloud sync errors to the user
+  return { synced: result.success };
 }
 
 // Mark quote as sent (locks the quote)

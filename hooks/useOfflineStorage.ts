@@ -117,7 +117,11 @@ export function useOfflineStorage(): UseOfflineStorageResult {
       return { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      console.error(`[Sync] Failed to sync item ${item.id}:`, message, error);
+      if (isUnrecoverable(message)) {
+        console.warn(`[Sync] Skipping item ${item.id} — unrecoverable: ${message}`);
+      } else {
+        console.error(`[Sync] Failed to sync item ${item.id}:`, message);
+      }
       return { success: false, error: message };
     }
   }, []);
