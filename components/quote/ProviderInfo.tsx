@@ -21,7 +21,7 @@ interface ProviderInfoProps {
 }
 
 export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onShowAuthModal, readOnly = false }: ProviderInfoProps) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [updateDefault, setUpdateDefault] = useState(false);
   
@@ -184,7 +184,7 @@ export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onSho
                 </div>
               </div>
               {/* "Sick of typing" Prompt for Anon Users */}
-              {!user && (localDetails.businessName || localDetails.phone) && (
+              {!authLoading && !user && (localDetails.businessName || localDetails.phone) && (
                 <div className="mt-4 p-3 bg-indigo-50 rounded-md border border-indigo-100 flex flex-col gap-2">
                     <p className="text-xs text-indigo-800">
                         <strong>Sick of typing this?</strong><br/>

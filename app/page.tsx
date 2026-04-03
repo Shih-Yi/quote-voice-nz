@@ -14,11 +14,13 @@ import { useAuth } from "@/hooks/useAuth"; // Import useAuth
 function LandingPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { signUp, signIn, signInGoogle } = useAuth();
+  const { user, loading, signUp, signIn, signInGoogle } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [defaultTab, setDefaultTab] = useState<"login" | "register">("login");
 
   useEffect(() => {
+    if (loading) return; // wait for auth state to resolve
+    if (user) return;    // already logged in — don't open modal
     const authParam = searchParams.get("auth");
     if (authParam === "register") {
       setDefaultTab("register");
@@ -27,7 +29,7 @@ function LandingPageContent() {
       setDefaultTab("login");
       setShowAuthModal(true);
     }
-  }, [searchParams]);
+  }, [searchParams, user, loading]);
 
   // Clean URL when modal closes
   const handleOpenChange = (open: boolean) => {
