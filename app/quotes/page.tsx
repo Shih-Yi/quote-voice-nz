@@ -9,6 +9,7 @@ import { getAllQuotes } from "@/lib/storage/quotes";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { BulkQuoteActions, SelectableQuote } from "@/components/quote/BulkQuoteActions";
 import { groupQuotesByVersion } from "@/lib/utils/quoteVersions";
+import { FeatureGate } from "@/components/subscription/FeatureGate";
 import type { Quote } from "@/types/quote";
 
 export default function QuotesPage() {
@@ -94,14 +95,16 @@ export default function QuotesPage() {
               {totalCount} {totalCount === 1 ? "quote" : "quotes"}
             </span>
             {allFilteredQuotes.length > 0 && !isSelecting && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsSelecting(true)}
-                className="text-text-muted text-xs"
-              >
-                Select
-              </Button>
+              <FeatureGate require="pro" featureLabel="Bulk select">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsSelecting(true)}
+                  className="text-text-muted text-xs"
+                >
+                  Select
+                </Button>
+              </FeatureGate>
             )}
           </div>
         </div>

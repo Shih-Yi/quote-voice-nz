@@ -15,6 +15,7 @@ interface EditSentQuoteDialogProps {
   currentVersion: number;
   onCreateNewVersion: () => void;
   onEditOriginal: () => void;
+  versionLimitReached?: boolean;
 }
 
 export function EditSentQuoteDialog({
@@ -23,6 +24,7 @@ export function EditSentQuoteDialog({
   currentVersion,
   onCreateNewVersion,
   onEditOriginal,
+  versionLimitReached = false,
 }: EditSentQuoteDialogProps) {
   const nextVersion = currentVersion + 1;
 
@@ -43,18 +45,30 @@ export function EditSentQuoteDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3 mt-4">
-          <Button
-            onClick={() => {
-              onCreateNewVersion();
-              onOpenChange(false);
-            }}
-            className="w-full bg-primary hover:bg-primary-dark"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Create New Version (V{nextVersion})
-          </Button>
+          {versionLimitReached ? (
+            <a
+              href="/pricing"
+              className="flex items-center justify-center gap-2 w-full rounded-md border border-primary/20 bg-primary/5 py-3 text-sm text-primary hover:bg-primary/10 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Version limit reached — Upgrade to Pro for unlimited
+            </a>
+          ) : (
+            <Button
+              onClick={() => {
+                onCreateNewVersion();
+                onOpenChange(false);
+              }}
+              className="w-full bg-primary hover:bg-primary-dark"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Create New Version (V{nextVersion})
+            </Button>
+          )}
 
           <Button
             variant="ghost"
@@ -69,7 +83,9 @@ export function EditSentQuoteDialog({
         </div>
 
         <p className="text-xs text-text-muted text-center mt-2">
-          Creating a new version is recommended to maintain a clear history
+          {versionLimitReached
+            ? "You can still edit the original quote directly"
+            : "Creating a new version is recommended to maintain a clear history"}
         </p>
       </DialogContent>
     </Dialog>

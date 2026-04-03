@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 import { countLocalQuotes } from "@/lib/storage/quotes";
 import { getTemplates } from "@/lib/storage/templates";
 import { getAuditLog, clearAuditLog, formatAuditAction, getAuditActionColour, type AuditEntry } from "@/lib/utils/auditLog";
@@ -15,6 +16,8 @@ import { formatNZDateTime } from "@/lib/utils/date";
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const { isPaid, isTeam, isLoading: subLoading } = useSubscription();
+  const auditLogDays = isTeam ? 365 : 180;
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [stats, setStats] = useState({
     localQuotes: 0,
@@ -33,7 +36,12 @@ export default function AdminPage() {
         getTemplates(),
       ]);
 
-      setAuditLog(log);
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - auditLogDays);
+      const filteredByTime = log.filter(
+        (e) => new Date(e.timestamp) >= cutoff
+      );
+      setAuditLog(filteredByTime);
 
       // Estimate storage
       let storageEstimate = "Unknown";
@@ -55,7 +63,7 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [auditLogDays]);
 
   useEffect(() => {
     loadData();
@@ -73,11 +81,42 @@ export default function AdminPage() {
     ? auditLog
     : auditLog.filter((e) => e.entityType === logFilter);
 
-  if (isLoading) {
+  if (isLoading || subLoading) {
     return (
       <MobileShell>
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      </MobileShell>
+    );
+  }
+
+  if (!isPaid) {
+    return (
+      <MobileShell>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard" className="text-text-muted hover:text-text">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+            <h1 className="text-xl font-bold text-text">Admin Panel</h1>
+          </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-6 text-center space-y-3">
+            <svg className="w-10 h-10 mx-auto text-primary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <p className="font-semibold text-text">Admin Panel — Pro Feature</p>
+            <p className="text-sm text-text-muted">
+              System statistics, audit logs, and advanced management tools are available on Pro and Team plans.
+            </p>
+            <Link href="/pricing">
+              <Button className="bg-primary hover:bg-primary-dark mt-1">
+                Upgrade to Pro →
+              </Button>
+            </Link>
+          </div>
         </div>
       </MobileShell>
     );
@@ -176,7 +215,13 @@ export default function AdminPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm text-text-muted">Audit Log</CardTitle>
+              <div>
+                <CardTitle className="text-sm text-text-muted">Audit Log</CardTitle>
+                <p className="text-[10px] text-text-muted mt-0.5">
+                  Showing last {auditLogDays} days
+                  {isTeam ? " (Team)" : " (Pro)"}
+                </p>
+              </div>
               {auditLog.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={handleClearLog} className="text-xs text-red-400">
                   Clear

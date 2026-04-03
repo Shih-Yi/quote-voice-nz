@@ -1,11 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { rateLimit } from "@/lib/rateLimit";
+import { getCurrentUser } from "@/lib/supabase/auth";
+import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 5 emails per minute per IP
   const rateLimited = rateLimit(request, { limit: 5, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
+
+  // Auth required for email sending
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Authentication required to send emails" },
+      { status: 401 }
+    );
+  }
+
+  // Monthly email quota check
+  const quotaCheck = await checkAndIncrementUsage(user.id, "emails_sent");
+  if (!quotaCheck.allowed) {
+    return NextResponse.json(
+      {
+        error: "quota_exceeded",
+        limit: quotaCheck.limit,
+        used: quotaCheck.used,
+        tier: "free",
+      },
+      { status: 429 }
+    );
+  }
 
   try {
     if (!process.env.RESEND_API_KEY) {

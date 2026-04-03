@@ -21,6 +21,7 @@ import { getRecentQuotes, saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
+import { UsageMeter } from "@/components/subscription/UsageMeter";
 import type { Quote } from "@/types/quote";
 
 export default function Dashboard() {
@@ -139,6 +140,9 @@ export default function Dashboard() {
             <VoiceRecorder onQuoteCreated={handleQuoteCreated} />
           </CardContent>
         </Card>
+
+        {/* Usage Meter (Free tier only) */}
+        <UsageMeter type="quotes" />
 
         {/* Recent Quotes */}
         <div>

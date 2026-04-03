@@ -4,10 +4,10 @@ import { useCallback, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useSubscription } from "@/hooks/useSubscription";
 import type { QuoteAttachment } from "@/types/quote";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
-const MAX_ATTACHMENTS = 10;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
 
 interface QuoteAttachmentsProps {
@@ -17,6 +17,8 @@ interface QuoteAttachmentsProps {
 }
 
 export function QuoteAttachments({ attachments, onChange, readOnly }: QuoteAttachmentsProps) {
+  const { limits } = useSubscription();
+  const maxAttachments = limits.attachmentsPerQuote;
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback(
@@ -24,9 +26,9 @@ export function QuoteAttachments({ attachments, onChange, readOnly }: QuoteAttac
       const files = e.target.files;
       if (!files || files.length === 0) return;
 
-      const remaining = MAX_ATTACHMENTS - attachments.length;
+      const remaining = maxAttachments - attachments.length;
       if (remaining <= 0) {
-        toast.error(`Maximum ${MAX_ATTACHMENTS} photos allowed`);
+        toast.error(`Maximum ${maxAttachments} photos allowed`);
         return;
       }
 
@@ -68,7 +70,7 @@ export function QuoteAttachments({ attachments, onChange, readOnly }: QuoteAttac
         inputRef.current.value = "";
       }
     },
-    [attachments, onChange]
+    [attachments, maxAttachments, onChange]
   );
 
   const handleRemove = useCallback(
@@ -107,7 +109,7 @@ export function QuoteAttachments({ attachments, onChange, readOnly }: QuoteAttac
       )}
 
       {/* Add button */}
-      {!readOnly && attachments.length < MAX_ATTACHMENTS && (
+      {!readOnly && attachments.length < maxAttachments && (
         <>
           <input
             ref={inputRef}
@@ -128,7 +130,7 @@ export function QuoteAttachments({ attachments, onChange, readOnly }: QuoteAttac
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            Add Photos ({attachments.length}/{MAX_ATTACHMENTS})
+            Add Photos ({attachments.length}/{maxAttachments})
           </Button>
         </>
       )}

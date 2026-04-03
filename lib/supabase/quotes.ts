@@ -33,10 +33,16 @@ interface SupabaseQuoteItem {
   total: number;
 }
 
-// Helper to fetch owner profile
+interface OwnerProfileResult {
+  profile: UserProfile | undefined;
+  /** "free" | "pro" | "team" — defaults to "free" when unknown */
+  tier: string;
+}
+
+// Helper to fetch owner profile and subscription tier
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<UserProfile | undefined> {
-  if (!userId) return undefined;
+async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<OwnerProfileResult> {
+  if (!userId) return { profile: undefined, tier: "free" };
 
   try {
     const { data } = await supabase
@@ -47,18 +53,21 @@ async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<
 
     if (data) {
       return {
-        id: data.id,
-        businessName: data.business_name,
-        phone: data.phone,
-        email: data.email,
-        address: data.address,
-        bankAccount: data.bank_account,
+        profile: {
+          id: data.id,
+          businessName: data.business_name,
+          phone: data.phone,
+          email: data.email,
+          address: data.address,
+          bankAccount: data.bank_account,
+        },
+        tier: data.subscription_tier ?? "free",
       };
     }
   } catch {
     // Ignore errors, profile might not exist
   }
-  return undefined;
+  return { profile: undefined, tier: "free" };
 }
 
 // Convert local Quote to Supabase format
@@ -275,7 +284,10 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
     }
 
     const quote = fromSupabaseFormat(data as SupabaseQuoteRow);
-    quote.ownerProfile = await fetchOwnerProfile(supabase, quote.userId || null);
+    const { profile, tier } = await fetchOwnerProfile(supabase, quote.userId || null);
+    quote.ownerProfile = profile;
+    // Show watermark when creator is on free tier (or no user = anonymous)
+    quote.showWatermark = !quote.userId || tier === "free";
 
     return quote;
   } catch {
@@ -302,7 +314,8 @@ export async function getQuoteByIdFromSupabase(id: string): Promise<Quote | null
     }
 
     const quote = fromSupabaseFormat(data as SupabaseQuoteRow);
-    quote.ownerProfile = await fetchOwnerProfile(supabase, quote.userId || null);
+    const { profile } = await fetchOwnerProfile(supabase, quote.userId || null);
+    quote.ownerProfile = profile;
 
     return quote;
   } catch {

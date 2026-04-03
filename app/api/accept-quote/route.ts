@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSupabase } from "@/lib/supabase/client";
+import { getUserTier } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 5 accepts per minute per IP
@@ -23,6 +24,31 @@ export async function POST(request: NextRequest) {
         { error: "Service unavailable" },
         { status: 503 }
       );
+    }
+
+    // Look up the quote to find the owner's user_id
+    const { data: quoteRow } = await supabase
+      .from("quotes")
+      .select("id, user_id, status")
+      .eq("slug", slug)
+      .single();
+
+    if (!quoteRow || quoteRow.status !== "sent") {
+      return NextResponse.json(
+        { error: "Quote not found or cannot be accepted" },
+        { status: 404 }
+      );
+    }
+
+    // Free-tier owners cannot have quotes accepted (Accepted status is Pro+)
+    if (quoteRow.user_id) {
+      const ownerTier = await getUserTier(quoteRow.user_id);
+      if (ownerTier === "free") {
+        return NextResponse.json(
+          { error: "Quote acceptance requires a Pro or Team plan. Please ask the tradie to upgrade." },
+          { status: 403 }
+        );
+      }
     }
 
     // Only allow accepting quotes that are currently "sent"

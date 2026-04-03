@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, use } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,12 @@ export default function PublicQuotePage({ params }: PageProps) {
       });
       if (res.ok) {
         setQuote((prev) => prev ? { ...prev, status: "accepted" } : prev);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Unable to accept quote. Please try again.");
       }
     } catch {
-      // Silent fail — customer can retry
+      toast.error("Unable to accept quote. Please check your connection.");
     } finally {
       setIsAccepting(false);
     }
@@ -101,7 +105,7 @@ export default function PublicQuotePage({ params }: PageProps) {
               <p className="text-sm text-text-muted">Quote</p>
             </div>
           </div>
-          <QuotePDF quote={quote} />
+          <QuotePDF quote={quote} showWatermark={quote.showWatermark} />
         </div>
 
         {/* Registration Prompt - Show only for non-logged-in users */}
@@ -216,7 +220,7 @@ export default function PublicQuotePage({ params }: PageProps) {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-text-muted pb-24">
+        <div className={`mt-8 text-center text-sm text-text-muted ${quote.showWatermark ? "pb-24" : "pb-8"}`}>
           <p>Generated with KiwiSpeakQuote</p>
           <p className="mt-1">
             <a href="/" className="text-primary hover:text-primary-dark">
@@ -225,6 +229,16 @@ export default function PublicQuotePage({ params }: PageProps) {
           </p>
         </div>
       </div>
+
+      {/* Watermark banner — free tier only */}
+      {quote.showWatermark && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-primary text-white text-center py-2 px-4 text-xs">
+          <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies &mdash; </span>
+          <a href="/pricing" className="underline font-semibold hover:text-white/80">
+            Remove watermark &rarr; Upgrade to Pro
+          </a>
+        </div>
+      )}
 
       {/* Sticky Accept Footer — only for "sent" quotes */}
       {quote.status === "sent" && (

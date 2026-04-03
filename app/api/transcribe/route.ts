@@ -2,11 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { rateLimit } from "@/lib/rateLimit";
 import { captureError } from "@/lib/sentry";
+import { getCurrentUser } from "@/lib/supabase/auth";
+import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 10 transcriptions per minute per IP
   const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
+
+  // Quota check for logged-in users
+  const user = await getCurrentUser();
+  if (user) {
+    const quotaCheck = await checkAndIncrementUsage(user.id, "quotes_created");
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: "quota_exceeded",
+          limit: quotaCheck.limit,
+          used: quotaCheck.used,
+          tier: "free",
+        },
+        { status: 429 }
+      );
+    }
+  }
 
   try {
     if (!process.env.GROQ_API_KEY) {

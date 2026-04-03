@@ -45,6 +45,9 @@ export interface Quote {
   // Rich content
   signatureDataUrl?: string;   // Customer signature (PNG data URL)
   attachments?: QuoteAttachment[];  // Site photos / documents
+
+  // Watermark flag — true when quote creator is on free tier
+  showWatermark?: boolean;
 }
 
 export interface QuoteAttachment {

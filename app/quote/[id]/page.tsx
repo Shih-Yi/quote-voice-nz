@@ -17,6 +17,7 @@ import { getQuoteById, getAllQuotes, updateQuote, deleteQuote, refreshQuoteFromC
 import { getVersionHistory } from "@/lib/utils/quoteVersions";
 import { updateUserProfile } from "@/lib/supabase/profile";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
 import type { Quote } from "@/types/quote";
 
 interface PageProps {
@@ -35,6 +36,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
   const [showVersionDiff, setShowVersionDiff] = useState(false);
   const [versionHistory, setVersionHistory] = useState<Quote[]>([]);
   const { user, signUp, signIn, signInGoogle } = useAuth();
+  const { limits, isPaid } = useSubscription();
 
   useEffect(() => {
     async function loadQuote() {
@@ -155,9 +157,16 @@ export default function QuoteEditorPage({ params }: PageProps) {
     }
   }, [quote]);
 
+  const versionLimitReached = versionHistory.length >= limits.versions;
+
   // Create new version (duplicate with version tracking)
   const handleCreateNewVersion = useCallback(async () => {
     if (!quote) return;
+
+    if (versionLimitReached) {
+      toast.error(`Version limit reached (${limits.versions}). Upgrade to Pro for unlimited versions.`);
+      return;
+    }
 
     try {
       const newQuote = await duplicateQuote(quote.id);
@@ -169,7 +178,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
       console.error("Failed to create new version:", error);
       toast.error("Failed to create new version");
     }
-  }, [quote, router]);
+  }, [quote, router, versionLimitReached, limits.versions]);
 
   // Edit original (unlock and edit in place)
   const handleEditOriginal = useCallback(async () => {
@@ -318,6 +327,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
           currentVersion={quote.version || 1}
           onCreateNewVersion={handleCreateNewVersion}
           onEditOriginal={handleEditOriginal}
+          versionLimitReached={versionLimitReached}
         />
 
         {/* Content */}
@@ -334,31 +344,45 @@ export default function QuoteEditorPage({ params }: PageProps) {
         {/* Version History & Diff */}
         {!isEditing && versionHistory.length > 1 && (
           <div className="mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowVersionDiff(!showVersionDiff)}
-              className="w-full gap-2 text-text-muted"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-              {showVersionDiff ? "Hide" : "Show"} Version Changes ({versionHistory.length} versions)
-            </Button>
+            {isPaid ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowVersionDiff(!showVersionDiff)}
+                  className="w-full gap-2 text-text-muted"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  </svg>
+                  {showVersionDiff ? "Hide" : "Show"} Version Changes ({versionHistory.length} versions)
+                </Button>
 
-            {showVersionDiff && (
-              <div className="mt-3 space-y-4">
-                {versionHistory.slice(0, -1).map((version, idx) => {
-                  const olderVersion = versionHistory[idx + 1];
-                  return (
-                    <QuoteVersionDiff
-                      key={version.id}
-                      older={olderVersion}
-                      newer={version}
-                    />
-                  );
-                })}
-              </div>
+                {showVersionDiff && (
+                  <div className="mt-3 space-y-4">
+                    {versionHistory.slice(0, -1).map((version, idx) => {
+                      const olderVersion = versionHistory[idx + 1];
+                      return (
+                        <QuoteVersionDiff
+                          key={version.id}
+                          older={olderVersion}
+                          newer={version}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <a
+                href="/pricing"
+                className="flex items-center justify-center gap-2 w-full rounded-md border border-primary/20 bg-primary/5 py-2 text-xs text-primary hover:bg-primary/10 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Version Diff — Upgrade to Pro to compare changes
+              </a>
             )}
           </div>
         )}

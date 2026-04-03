@@ -9,9 +9,10 @@ import type { Quote } from "@/types/quote";
 
 interface QuotePDFProps {
   quote: Quote;
+  showWatermark?: boolean;
 }
 
-export function QuotePDF({ quote }: QuotePDFProps) {
+export function QuotePDF({ quote, showWatermark = false }: QuotePDFProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generatePDF = useCallback(async () => {
@@ -264,13 +265,30 @@ export function QuotePDF({ quote }: QuotePDFProps) {
       // ============================================
       // FOOTER
       // ============================================
-      const footerY = pdf.internal.pageSize.getHeight() - 15;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const footerY = pageHeight - (showWatermark ? 22 : 15);
 
       pdf.setTextColor(...mutedColor);
       pdf.setFontSize(8);
       pdf.setFont("helvetica", "normal");
       pdf.text("Generated with KiwiSpeakQuote", pageWidth / 2, footerY, { align: "center" });
       pdf.text("All prices in NZD. GST rate: 15%", pageWidth / 2, footerY + 4, { align: "center" });
+
+      // Watermark banner for free tier
+      if (showWatermark) {
+        const wmarkY = pageHeight - 12;
+        pdf.setFillColor(99, 102, 241); // primary
+        pdf.rect(0, wmarkY - 4, pageWidth, 16, "F");
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(7.5);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(
+          "Created with ChurQuote · churquote.co.nz · Remove watermark — Upgrade to Pro",
+          pageWidth / 2,
+          wmarkY + 4,
+          { align: "center" }
+        );
+      }
 
       // Save PDF
       pdf.save(`quote-${quote.slug || quote.id.slice(0, 8)}.pdf`);

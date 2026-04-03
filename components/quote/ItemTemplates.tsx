@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { getTemplates, saveTemplate, deleteTemplate } from "@/lib/storage/templates";
 import { formatNZD } from "@/lib/utils/currency";
+import { useSubscription } from "@/hooks/useSubscription";
 import type { ItemTemplate } from "@/types/quote";
 
 interface ItemTemplatesProps {
@@ -15,6 +16,7 @@ interface ItemTemplatesProps {
 }
 
 export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
+  const { limits } = useSubscription();
   const [isOpen, setIsOpen] = useState(false);
   const [templates, setTemplates] = useState<ItemTemplate[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -38,6 +40,11 @@ export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
 
   const handleAddTemplate = useCallback(async () => {
     if (!newDesc.trim()) return;
+
+    if (templates.length >= limits.templates) {
+      toast.error(`Template limit reached (${limits.templates}). Upgrade to Pro for unlimited templates.`);
+      return;
+    }
 
     const template: ItemTemplate = {
       id: uuidv4(),
@@ -132,15 +139,24 @@ export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
             {/* Add new template */}
             <div className="border-t border-border p-2">
               {!isAdding ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsAdding(true)}
-                  className="w-full text-xs text-primary"
-                >
-                  + Save New Template
-                </Button>
+                templates.length >= limits.templates ? (
+                  <a
+                    href="/pricing"
+                    className="block w-full text-center text-xs text-amber-600 hover:text-amber-700 py-1"
+                  >
+                    🔒 {templates.length}/{limits.templates} templates — Upgrade for unlimited
+                  </a>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsAdding(true)}
+                    className="w-full text-xs text-primary"
+                  >
+                    + Save New Template
+                  </Button>
+                )
               ) : (
                 <div className="space-y-2">
                   <div>

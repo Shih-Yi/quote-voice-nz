@@ -9,10 +9,12 @@ import { getAllQuotes } from "@/lib/storage/quotes";
 import { calculateRevenue, type RevenueOverview } from "@/lib/utils/revenue";
 import { formatNZD } from "@/lib/utils/currency";
 import { formatRelativeTime } from "@/lib/utils/date";
+import { useSubscription } from "@/hooks/useSubscription";
 
 export default function RevenuePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [overview, setOverview] = useState<RevenueOverview | null>(null);
+  const { isPaid } = useSubscription();
 
   useEffect(() => {
     async function load() {
@@ -122,53 +124,70 @@ export default function RevenuePage() {
           </CardContent>
         </Card>
 
-        {/* Monthly Chart */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-text-muted">Monthly Revenue (Last 6 Months)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-2 h-32">
-              {overview.monthlyStats.map((m) => {
-                const height = maxMonthlyTotal > 0 ? (m.total / maxMonthlyTotal) * 100 : 0;
-                const acceptedHeight = maxMonthlyTotal > 0 ? (m.acceptedTotal / maxMonthlyTotal) * 100 : 0;
-                return (
-                  <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                    <p className="text-[9px] text-text-muted">{formatNZD(m.total)}</p>
-                    <div className="w-full flex flex-col justify-end h-20 relative">
-                      {/* Total bar */}
-                      <div
-                        className="w-full bg-primary/20 rounded-t"
-                        style={{ height: `${Math.max(height, 2)}%` }}
-                      >
-                        {/* Accepted portion */}
+        {/* Monthly Chart — Pro+ only */}
+        {isPaid ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-text-muted">Monthly Revenue (Last 6 Months)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-2 h-32">
+                {overview.monthlyStats.map((m) => {
+                  const height = maxMonthlyTotal > 0 ? (m.total / maxMonthlyTotal) * 100 : 0;
+                  const acceptedHeight = maxMonthlyTotal > 0 ? (m.acceptedTotal / maxMonthlyTotal) * 100 : 0;
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
+                      <p className="text-[9px] text-text-muted">{formatNZD(m.total)}</p>
+                      <div className="w-full flex flex-col justify-end h-20 relative">
+                        {/* Total bar */}
                         <div
-                          className="w-full bg-green-400 rounded-t absolute bottom-0"
-                          style={{ height: `${acceptedHeight}%` }}
-                        />
+                          className="w-full bg-primary/20 rounded-t"
+                          style={{ height: `${Math.max(height, 2)}%` }}
+                        >
+                          {/* Accepted portion */}
+                          <div
+                            className="w-full bg-green-400 rounded-t absolute bottom-0"
+                            style={{ height: `${acceptedHeight}%` }}
+                          />
+                        </div>
                       </div>
+                      <p className="text-[9px] text-text-muted">{m.label.split(" ")[0]}</p>
+                      <p className="text-[8px] text-text-muted">{m.count} quotes</p>
                     </div>
-                    <p className="text-[9px] text-text-muted">{m.label.split(" ")[0]}</p>
-                    <p className="text-[8px] text-text-muted">{m.count} quotes</p>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-4 mt-3 justify-center">
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-2 bg-primary/20 rounded" />
-                <span className="text-[10px] text-text-muted">Total</span>
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-2 bg-green-400 rounded" />
-                <span className="text-[10px] text-text-muted">Accepted</span>
+              <div className="flex items-center gap-4 mt-3 justify-center">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-2 bg-primary/20 rounded" />
+                  <span className="text-[10px] text-text-muted">Total</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-2 bg-green-400 rounded" />
+                  <span className="text-[10px] text-text-muted">Accepted</span>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="py-6 text-center">
+              <p className="text-sm font-semibold text-text mb-1">Full Revenue History</p>
+              <p className="text-xs text-text-muted mb-3">
+                Upgrade to Pro to unlock 6-month trends, top customers &amp; CSV export.
+              </p>
+              <a
+                href="/pricing"
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primary-dark transition-colors"
+              >
+                View Pro Plans →
+              </a>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Top Customers */}
-        {overview.topCustomers.length > 0 && (
+        {/* Top Customers — Pro+ only */}
+        {isPaid && overview.topCustomers.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-text-muted">Top Customers</CardTitle>
