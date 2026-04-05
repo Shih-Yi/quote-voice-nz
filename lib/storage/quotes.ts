@@ -1,9 +1,10 @@
 import { get, set } from "idb-keyval";
 import type { Quote } from "@/types/quote";
 import {
-  saveQuoteToSupabase,
-  updateQuoteInSupabase,
+  syncQuoteToSupabase,
   deleteQuoteFromSupabase,
+} from "@/lib/supabase/quotes-api";
+import {
   getQuoteBySlugFromSupabase,
   getQuoteByIdFromSupabase,
 } from "@/lib/supabase/quotes";
@@ -56,21 +57,27 @@ export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
   return quotes.find((q) => q.slug === slug);
 }
 
-// Save NEW quote - local first, then sync to Supabase
-export async function saveQuote(quote: Quote): Promise<{ synced: boolean }> {
-  // Get device token (same for all quotes on this device)
-  const deviceToken = await getDeviceToken();
-
+// Save NEW quote - local first, optionally sync to Supabase
+export async function saveQuote(
+  quote: Quote,
+  options?: { localOnly?: boolean }
+): Promise<{ synced: boolean }> {
   // 1. Save locally first (offline-first)
   const quotes = await getAllQuotes();
   const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
   quotes.push(updatedQuote);
   await set(QUOTES_KEY, quotes);
 
-  // 2. Try to sync to Supabase (non-blocking)
-  const result = await saveQuoteToSupabase(updatedQuote, deviceToken);
-
   logAudit("quote.created", "quote", updatedQuote.id, updatedQuote.customerName);
+
+  // 2. Skip cloud sync if localOnly (e.g. voice recording → edit page)
+  if (options?.localOnly) {
+    return { synced: false };
+  }
+
+  // 3. Try to sync to Supabase (non-blocking)
+  const deviceToken = await getDeviceToken();
+  const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
 
   return { synced: result.success };
 }
@@ -83,32 +90,38 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
     return { synced: false, error: "Cannot edit sent quotes. Please duplicate instead." };
   }
 
-  // 1. Update locally
-  const quotes = await getAllQuotes();
-  const existingIndex = quotes.findIndex((q) => q.id === quote.id);
+  try {
+    // 1. Update locally
+    const quotes = await getAllQuotes();
+    const existingIndex = quotes.findIndex((q) => q.id === quote.id);
 
-  const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
+    const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
 
-  if (existingIndex >= 0) {
-    quotes[existingIndex] = updatedQuote;
-  } else {
-    quotes.push(updatedQuote);
+    if (existingIndex >= 0) {
+      quotes[existingIndex] = updatedQuote;
+    } else {
+      quotes.push(updatedQuote);
+    }
+
+    await set(QUOTES_KEY, quotes);
+
+    // 2. Get device token and sync to Supabase (upsert — handles both new and existing)
+    const deviceToken = await getDeviceToken();
+    const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
+
+    if (!result.success) {
+      console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
+    }
+
+    logAudit("quote.updated", "quote", quote.id, quote.customerName);
+
+    // Local save already succeeded — don't surface cloud sync errors to the user
+    return { synced: result.success };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[updateQuote] Unexpected error:", err);
+    return { synced: false, error: `Save failed: ${message}` };
   }
-
-  await set(QUOTES_KEY, quotes);
-
-  // 2. Get device token and sync to Supabase
-  const deviceToken = await getDeviceToken();
-  const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
-
-  if (!result.success) {
-    console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
-  }
-
-  logAudit("quote.updated", "quote", quote.id, quote.customerName);
-
-  // Local save already succeeded — don't surface cloud sync errors to the user
-  return { synced: result.success };
 }
 
 // Mark quote as sent (locks the quote)
@@ -129,9 +142,9 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
   quotes[index] = updatedQuote;
   await set(QUOTES_KEY, quotes);
 
-  // Sync to Supabase
+  // Sync to Supabase (upsert)
   const deviceToken = await getDeviceToken();
-  const result = await updateQuoteInSupabase(updatedQuote, deviceToken);
+  const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
 
   // Pre-cache the public quote page for offline sharing
   if (updatedQuote.slug) {
@@ -199,9 +212,9 @@ export async function unlockQuoteForEditing(quoteId: string): Promise<{ success:
   quotes[index] = updatedQuote;
   await set(QUOTES_KEY, quotes);
 
-  // Sync to Supabase
+  // Sync to Supabase (upsert)
   const deviceToken = await getDeviceToken();
-  await updateQuoteInSupabase(updatedQuote, deviceToken);
+  await syncQuoteToSupabase(updatedQuote, deviceToken);
 
   return { success: true };
 }

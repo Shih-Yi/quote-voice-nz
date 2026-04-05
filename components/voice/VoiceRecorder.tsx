@@ -37,22 +37,10 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
 
   const processAudio = useCallback(
     async (blob: Blob) => {
-      const audioId = uuidv4();
+      const createdAt = new Date().toISOString();
 
       try {
         setIsProcessing(true);
-        setProcessingStatus("Saving locally...");
-
-        // Save to pending immediately
-        await addPendingAudio({
-          id: audioId,
-          blob,
-          createdAt: new Date().toISOString(),
-          retryCount: 0,
-        });
-
-        toast.success("Draft saved locally");
-
         setProcessingStatus("Compressing audio...");
 
         // Compress to MP3 before upload (saves bandwidth on mobile)
@@ -71,12 +59,15 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         });
 
         if (!transcribeRes.ok) {
+          // Recoverable error (server/network) — save to pending for retry
+          await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
           throw new Error("Transcription failed");
         }
 
         const { text } = await transcribeRes.json();
 
         if (!text || text.trim().length === 0) {
+          // Unrecoverable — no point retrying silent audio
           throw new Error("No speech detected");
         }
 
@@ -90,6 +81,8 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         });
 
         if (!extractRes.ok) {
+          // Recoverable error — save to pending for retry
+          await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
           throw new Error("Extraction failed");
         }
 
@@ -122,16 +115,12 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           gst,
           total,
           status: "draft",
-          createdAt: new Date().toISOString(),
+          createdAt,
           updatedAt: new Date().toISOString(),
           slug,
         };
 
-        await saveQuote(quote);
-
-        // Remove from pending since it succeeded
-        const { removePendingAudio } = await import("@/lib/storage/pending");
-        await removePendingAudio(audioId);
+        await saveQuote(quote, { localOnly: true });
 
         setIsProcessing(false);
         setProcessingStatus("");
@@ -156,13 +145,12 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           toast.error("No speech detected", {
             description: "Please try recording again",
           });
-          resetRecording();
         } else {
           toast.info("Saved offline", {
             description: "Quote will sync when connected",
           });
-          resetRecording();
         }
+        resetRecording();
       }
     },
     [router, resetRecording, onQuoteCreated]

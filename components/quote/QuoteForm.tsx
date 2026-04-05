@@ -237,7 +237,7 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
             <CardTitle className="text-base">Quote Items</CardTitle>
             <div className="flex gap-1">
               <ItemTemplates onSelect={handleAddTemplateItem} />
-              <Button size="sm" variant="outline" onClick={handleAddItem}>
+              <Button type="button" size="sm" variant="outline" onClick={handleAddItem}>
                 + Add Item
               </Button>
             </div>
@@ -296,6 +296,7 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-text-muted">GST Mode</span>
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={handleGstToggle}

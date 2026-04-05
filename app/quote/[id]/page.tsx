@@ -108,7 +108,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
       toast.success("Quote saved!");
     } catch (error) {
       console.error("Failed to save quote:", error);
-      toast.error("Failed to save quote");
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to save quote: ${message}`);
     } finally {
       setIsSaving(false);
     }

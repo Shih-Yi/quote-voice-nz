@@ -96,7 +96,7 @@ export default function Dashboard() {
         updatedAt: new Date().toISOString(),
         slug,
       };
-      await saveQuote(quote);
+      await saveQuote(quote, { localOnly: true });
       lastCreatedId = quoteId;
     }
 

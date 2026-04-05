@@ -111,7 +111,7 @@ export function useOfflineStorage(): UseOfflineStorageResult {
         slug,
       };
 
-      await saveQuote(quote);
+      await saveQuote(quote, { localOnly: true });
       await removePendingAudio(item.id);
 
       return { success: true };

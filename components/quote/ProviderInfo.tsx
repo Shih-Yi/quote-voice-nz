@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import { getStoredProviderDetails, saveProviderDetailsToStorage } from "@/lib/storage/provider";
-import { getSupabase } from "@/lib/supabase/client";
+import { getUserProfile } from "@/lib/supabase/profile";
 import { ChevronDown, ChevronUp, Store, Phone, Mail } from "lucide-react";
 
 interface ProviderInfoProps {
@@ -46,22 +46,15 @@ export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onSho
       let defaults: Partial<UserProfile> = {};
 
       if (user) {
-        // Logged in: Try to fetch profile
-        const supabase = getSupabase();
-        if (!supabase) return;
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        
-        if (data) {
+        // Logged in: Fetch profile via server API
+        const profile = await getUserProfile(user.id);
+        if (profile) {
           defaults = {
-            businessName: data.business_name,
-            phone: data.phone,
-            email: data.email,
-            address: data.address,
-            bankAccount: data.bank_account,
+            businessName: profile.businessName,
+            phone: profile.phone,
+            email: profile.email,
+            address: profile.address,
+            bankAccount: profile.bankAccount,
           };
         }
       } else {
