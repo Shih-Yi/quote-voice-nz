@@ -11,7 +11,7 @@ import {
   onAuthStateChange,
 } from "@/lib/supabase/auth";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
-import { bindDeviceQuotesToUser } from "@/lib/supabase/quotes";
+import { bindDeviceQuotesToUser } from "@/lib/supabase/quotes-api";
 
 interface AuthContextType {
   user: User | null;

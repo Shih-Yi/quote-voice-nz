@@ -1,62 +1,36 @@
-import { getSupabase } from "./client";
 import type { UserProfile } from "@/types/quote";
 
-// Get the current user's profile
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-
+// Get the current user's profile via Next.js API route (server-side read)
+export async function getUserProfile(_userId: string): Promise<UserProfile | null> {
   try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
+    const res = await fetch("/api/profile");
+    if (!res.ok) return null;
 
-    if (error) {
-      // It's possible the profile doesn't exist yet
-      return null;
-    }
-
-    return {
-      id: data.id,
-      businessName: data.business_name,
-      phone: data.phone,
-      email: data.email,
-      address: data.address,
-      bankAccount: data.bank_account,
-      // Note: db schema doesn't have gst_number yet, assuming we might add it or map it to something else
-      // For now, let's stick to what's in the DB schema based on previous read
-    };
-  } catch (err) {
-    console.error("Error fetching profile:", err);
+    const { profile } = await res.json();
+    return profile ?? null;
+  } catch {
     return null;
   }
 }
 
-// Update the current user's profile
-export async function updateUserProfile(userId: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, error: "Supabase not configured" };
-
+// Update the current user's profile via Next.js API route
+export async function updateUserProfile(_userId: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   try {
-    const updateData = {
-      business_name: profile.businessName,
-      phone: profile.phone,
-      email: profile.email,
-      address: profile.address,
-      bank_account: profile.bankAccount,
-      updated_at: new Date().toISOString(),
-    };
+    const res = await fetch("/api/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        businessName: profile.businessName,
+        phone: profile.phone,
+        email: profile.email,
+        address: profile.address,
+        bankAccount: profile.bankAccount,
+      }),
+    });
 
-    // Upsert so it creates if not exists
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({ id: userId, ...updateData });
-
-    if (error) {
-      console.error("Profile update error:", error);
-      return { success: false, error: error.message };
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { success: false, error: body.error || `HTTP ${res.status}` };
     }
 
     return { success: true };

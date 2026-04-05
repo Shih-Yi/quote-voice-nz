@@ -4,7 +4,7 @@ import type { Quote, LineItem, UserProfile } from "@/types/quote";
 interface SupabaseQuoteRow {
   id: string;
   slug: string;
-  owner_token: string;
+  owner_token_hash: string;
   user_id: string | null;
   customer_name: string;
   customer_phone: string | null;
@@ -70,39 +70,6 @@ async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<
   return { profile: undefined, tier: "free" };
 }
 
-// Convert local Quote to Supabase format
-function toSupabaseFormat(quote: Quote, deviceToken: string): Record<string, unknown> {
-  const itemsSum = quote.items.reduce((sum, item) => sum + item.total, 0);
-
-  return {
-    id: quote.id,
-    slug: quote.slug || quote.id.slice(0, 8),
-    owner_token: deviceToken,
-    customer_name: quote.customerName,
-    customer_phone: quote.customerPhone || null,
-    customer_email: quote.customerEmail || null,
-    customer_address: quote.customerAddress || null,
-    provider_details: quote.providerDetails || null,
-    items: quote.items.map((item) => ({
-      id: item.id,
-      description: item.description,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
-      total: item.total,
-    })),
-    notes: quote.notes || null,
-    gst_inclusive: quote.gstInclusive,
-    items_sum: itemsSum,
-    subtotal: quote.subtotal,
-    gst: quote.gst,
-    total: quote.total,
-    status: quote.status,
-    parent_id: quote.parentId || null,   // Version tracking
-    version: quote.version || 1,          // Default to V1
-    created_at: quote.createdAt,
-    updated_at: quote.updatedAt,
-  };
-}
 
 // Convert Supabase format to local Quote
 function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
@@ -135,137 +102,7 @@ function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
   };
 }
 
-// Save quote to Supabase
-export async function saveQuoteToSupabase(
-  quote: Quote,
-  deviceToken: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { success: false, error: "Supabase not configured" };
-  }
-
-  try {
-    const data = toSupabaseFormat(quote, deviceToken);
-
-    const { error } = await supabase
-      .from("quotes")
-      .upsert(data, { onConflict: "id" });
-
-    if (error) {
-      console.error("Supabase save error:", error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (err) {
-    console.error("Supabase save exception:", err);
-    return { success: false, error: "Failed to save to cloud" };
-  }
-}
-
-// Update quote in Supabase
-export async function updateQuoteInSupabase(
-  quote: Quote,
-  deviceToken: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { success: false, error: "Supabase not configured" };
-  }
-
-  const itemsSum = quote.items.reduce((sum, item) => sum + item.total, 0);
-
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const updateData = {
-      customer_name: quote.customerName,
-      customer_phone: quote.customerPhone || null,
-      customer_email: quote.customerEmail || null,
-      customer_address: quote.customerAddress || null,
-      provider_details: quote.providerDetails || null,
-      items: quote.items.map((item) => ({
-        id: item.id,
-        description: item.description,
-        quantity: item.quantity,
-        unit_price: item.unitPrice,
-        total: item.total,
-      })),
-      notes: quote.notes || null,
-      gst_inclusive: quote.gstInclusive,
-      items_sum: itemsSum,
-      subtotal: quote.subtotal,
-      gst: quote.gst,
-      total: quote.total,
-      status: quote.status,
-    };
-
-    if (user) {
-      // Authenticated: Use standard RLS update
-      const { error } = await supabase
-        .from("quotes")
-        .update(updateData)
-        .eq("id", quote.id);
-
-      if (error) throw error;
-    } else {
-      // Anonymous: Use secure RPC (token in body, not URL)
-      const { data: success, error } = await supabase.rpc("update_quote_anon", {
-        p_id: quote.id,
-        p_token: deviceToken,
-        p_payload: updateData,
-      });
-
-      if (error) throw error;
-      if (!success) return { success: false, error: "Quote not found or access denied" };
-    }
-
-    return { success: true };
-  } catch (err) {
-    console.error("Supabase update exception:", err);
-    return { success: false, error: (err as Error).message || "Failed to update in cloud" };
-  }
-}
-
-// Delete quote from Supabase
-export async function deleteQuoteFromSupabase(
-  id: string,
-  deviceToken: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { success: false, error: "Supabase not configured" };
-  }
-
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-      const { error } = await supabase
-        .from("quotes")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-    } else {
-      // Anonymous: Use secure RPC (token in body, not URL)
-      const { data: success, error } = await supabase.rpc("delete_quote_anon", {
-        p_id: id,
-        p_token: deviceToken,
-      });
-
-      if (error) throw error;
-      if (!success) return { success: false, error: "Quote not found or access denied" };
-    }
-
-    return { success: true };
-  } catch {
-    return { success: false, error: "Failed to delete from cloud" };
-  }
-}
-
-// Get quote by slug (public - for shared links)
+// Get quote by slug (public - for shared links, uses RPC)
 export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | null> {
   const supabase = getSupabase();
   if (!supabase) {
@@ -273,17 +110,16 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
   }
 
   try {
-    const { data, error } = await supabase
-      .from("quotes")
-      .select("*")
-      .eq("slug", slug)
-      .single();
+    const { data, error } = await supabase.rpc("get_quote_by_slug", {
+      p_slug: slug,
+    });
 
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       return null;
     }
 
-    const quote = fromSupabaseFormat(data as SupabaseQuoteRow);
+    const row = data[0] as SupabaseQuoteRow;
+    const quote = fromSupabaseFormat(row);
     const { profile, tier } = await fetchOwnerProfile(supabase, quote.userId || null);
     quote.ownerProfile = profile;
     // Show watermark when creator is on free tier (or no user = anonymous)
@@ -368,30 +204,3 @@ export async function countDeviceQuotes(deviceToken: string): Promise<number> {
   }
 }
 
-// Bind all device quotes to user after registration/login
-export async function bindDeviceQuotesToUser(
-  deviceToken: string,
-  userId: string
-): Promise<{ count: number; error: string | null }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { count: 0, error: "Supabase not configured" };
-  }
-
-  try {
-    const { data, error } = await supabase.rpc("bind_device_quotes_to_user", {
-      p_device_token: deviceToken,
-      p_user_id: userId,
-    });
-
-    if (error) {
-      console.error("Bind quotes error:", error);
-      return { count: 0, error: error.message };
-    }
-
-    return { count: data || 0, error: null };
-  } catch (err) {
-    console.error("Bind quotes exception:", err);
-    return { count: 0, error: "Failed to bind quotes" };
-  }
-}

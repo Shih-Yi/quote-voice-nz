@@ -1,4 +1,4 @@
-import { getSupabase } from "./client";
+import { getServerSupabase } from "./server";
 
 export type SubscriptionTier = "free" | "pro" | "team";
 export type SubscriptionStatus = "active" | "trialing" | "past_due" | "cancelled";
@@ -61,7 +61,7 @@ function currentBillingMonth(): string {
 // Get a user's current subscription info.
 // Falls back to free/active if no record found (new users are always Free).
 export async function getSubscriptionInfo(userId: string): Promise<SubscriptionInfo> {
-  const supabase = getSupabase();
+  const supabase = getServerSupabase();
   if (!supabase) {
     return { tier: "free", status: "active", trialEndsAt: null, currentPeriodEnd: null, stripeCustomerId: null, stripeSubscriptionId: null, billingInterval: null };
   }
@@ -89,7 +89,7 @@ export async function getSubscriptionInfo(userId: string): Promise<SubscriptionI
 
 // Fast tier lookup using denormalised column on profiles
 export async function getUserTier(userId: string): Promise<SubscriptionTier> {
-  const supabase = getSupabase();
+  const supabase = getServerSupabase();
   if (!supabase) return "free";
 
   const { data } = await supabase
@@ -103,7 +103,7 @@ export async function getUserTier(userId: string): Promise<SubscriptionTier> {
 
 // Get current month's usage for a user
 export async function getMonthlyUsage(userId: string): Promise<MonthlyUsage> {
-  const supabase = getSupabase();
+  const supabase = getServerSupabase();
   if (!supabase) return { quotesCreated: 0, emailsSent: 0 };
 
   const { data } = await supabase
@@ -127,7 +127,7 @@ export async function checkAndIncrementUsage(
   userId: string,
   field: UsageField
 ): Promise<{ allowed: boolean; limit: number; used: number }> {
-  const supabase = getSupabase();
+  const supabase = getServerSupabase();
 
   const tier = await getUserTier(userId);
   const limits = TIER_LIMITS[tier];
@@ -190,7 +190,7 @@ export async function upsertSubscription(params: {
   trialEndsAt?: string | null;
   currentPeriodEnd?: string | null;
 }): Promise<{ error: string | null }> {
-  const supabase = getSupabase();
+  const supabase = getServerSupabase();
   if (!supabase) return { error: "Supabase not configured" };
 
   const { error } = await supabase.from("subscriptions").upsert({
