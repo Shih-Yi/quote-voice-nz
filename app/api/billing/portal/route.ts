@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/supabase/auth";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import { stripe } from "@/lib/stripe";
 import { getSubscriptionInfo } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserServer();
   if (!user) {
     return NextResponse.json(
       { error: "Authentication required" },

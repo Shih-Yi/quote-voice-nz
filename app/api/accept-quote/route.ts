@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rateLimit";
-import { getSupabase } from "@/lib/supabase/client";
+import { getServerSupabase } from "@/lib/supabase/server";
 import { getUserTier } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
@@ -18,11 +18,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = getSupabase();
+    const supabase = getServerSupabase();
     if (!supabase) {
       return NextResponse.json(
-        { error: "Service unavailable" },
-        { status: 503 }
+        { error: "Server configuration error" },
+        { status: 500 }
       );
     }
 

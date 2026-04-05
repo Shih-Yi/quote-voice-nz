@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { rateLimit } from "@/lib/rateLimit";
-import { getCurrentUser } from "@/lib/supabase/auth";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   // Auth required for email sending
-  const user = await getCurrentUser();
+  const user = await getCurrentUserServer();
   if (!user) {
     return NextResponse.json(
       { error: "Authentication required to send emails" },

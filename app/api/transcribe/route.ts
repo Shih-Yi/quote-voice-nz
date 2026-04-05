@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { rateLimit } from "@/lib/rateLimit";
 import { captureError } from "@/lib/sentry";
-import { getCurrentUser } from "@/lib/supabase/auth";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   // Quota check for logged-in users
-  const user = await getCurrentUser();
+  const user = await getCurrentUserServer();
   if (user) {
     const quotaCheck = await checkAndIncrementUsage(user.id, "quotes_created");
     if (!quotaCheck.allowed) {

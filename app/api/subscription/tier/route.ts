@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/supabase/auth";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import {
   getUserTier,
   getMonthlyUsage,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/supabase/subscription";
 
 export async function GET() {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserServer();
 
   if (!user) {
     return NextResponse.json({

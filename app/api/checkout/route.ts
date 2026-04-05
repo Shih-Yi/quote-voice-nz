@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/supabase/auth";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import { stripe, STRIPE_PRICES, type StripePriceKey } from "@/lib/stripe";
 import { getSubscriptionInfo } from "@/lib/supabase/subscription";
 
@@ -11,7 +11,7 @@ const VALID_PRICE_KEYS = new Set<StripePriceKey>([
 ]);
 
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser();
+  const user = await getCurrentUserServer();
   if (!user) {
     return NextResponse.json(
       { error: "Authentication required" },
