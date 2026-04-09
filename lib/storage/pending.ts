@@ -10,8 +10,7 @@ export async function getPendingAudio(): Promise<PendingAudio[]> {
 
 export async function addPendingAudio(audio: PendingAudio): Promise<void> {
   const pending = await getPendingAudio();
-  pending.push(audio);
-  await set(PENDING_KEY, pending);
+  await set(PENDING_KEY, [...pending, audio]);
 }
 
 export async function removePendingAudio(id: string): Promise<void> {
@@ -22,11 +21,10 @@ export async function removePendingAudio(id: string): Promise<void> {
 
 export async function updatePendingAudioRetry(id: string): Promise<void> {
   const pending = await getPendingAudio();
-  const item = pending.find((p) => p.id === id);
-  if (item) {
-    item.retryCount += 1;
-    await set(PENDING_KEY, pending);
-  }
+  const updated = pending.map((p) =>
+    p.id === id ? { ...p, retryCount: p.retryCount + 1 } : p
+  );
+  await set(PENDING_KEY, updated);
 }
 
 export async function getPendingCount(): Promise<number> {

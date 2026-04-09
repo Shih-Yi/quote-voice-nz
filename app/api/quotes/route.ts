@@ -25,10 +25,6 @@ interface QuotePayload {
   }>;
   notes?: string | null;
   gstInclusive: boolean;
-  itemsSum: number;
-  subtotal: number;
-  gst: number;
-  total: number;
   status: string;
   parentId?: string | null;
   version?: number;
@@ -71,6 +67,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!Array.isArray(body.items)) {
+      return NextResponse.json(
+        { error: "items must be an array" },
+        { status: 400 }
+      );
+    }
+
     const tokenHash = hashToken(body.token);
     const itemsSum = body.items.reduce((sum, item) => sum + item.total, 0);
 
@@ -93,9 +96,7 @@ export async function POST(request: NextRequest) {
       notes: body.notes || null,
       gst_inclusive: body.gstInclusive,
       items_sum: itemsSum,
-      subtotal: body.subtotal,
-      gst: body.gst,
-      total: body.total,
+      // subtotal, gst, total are GENERATED ALWAYS columns — do not insert/update
       status: body.status || "draft",
       parent_id: body.parentId || null,
       version: body.version || 1,

@@ -13,6 +13,54 @@ import { preCacheQuotePage } from "@/lib/utils/swCache";
 import { logAudit } from "@/lib/utils/auditLog";
 
 const QUOTES_KEY = "ksq_quotes";
+const SYNC_QUEUE_KEY = "ksq_sync_queue";
+
+// --- Sync queue helpers (quote IDs that failed cloud sync and need retry) ---
+
+async function addToSyncQueue(quoteId: string): Promise<void> {
+  const queue = (await get<string[]>(SYNC_QUEUE_KEY)) || [];
+  if (!queue.includes(quoteId)) {
+    await set(SYNC_QUEUE_KEY, [...queue, quoteId]);
+  }
+}
+
+async function removeFromSyncQueue(quoteId: string): Promise<void> {
+  const queue = (await get<string[]>(SYNC_QUEUE_KEY)) || [];
+  await set(SYNC_QUEUE_KEY, queue.filter((id) => id !== quoteId));
+}
+
+export async function getSyncQueue(): Promise<string[]> {
+  return (await get<string[]>(SYNC_QUEUE_KEY)) || [];
+}
+
+// Retry all queued quotes — call this on app launch or when coming online
+export async function syncPendingQuotes(): Promise<{ synced: number; failed: number }> {
+  const queue = await getSyncQueue();
+  if (queue.length === 0) return { synced: 0, failed: 0 };
+
+  const deviceToken = await getDeviceToken();
+  let synced = 0;
+  let failed = 0;
+
+  for (const quoteId of queue) {
+    const quote = await getQuoteById(quoteId);
+    if (!quote) {
+      // Quote deleted locally — remove from queue silently
+      await removeFromSyncQueue(quoteId);
+      continue;
+    }
+
+    const result = await syncQuoteToSupabase(quote, deviceToken);
+    if (result.success) {
+      await removeFromSyncQueue(quoteId);
+      synced++;
+    } else {
+      failed++;
+    }
+  }
+
+  return { synced, failed };
+}
 
 // Get all quotes from local storage
 export async function getAllQuotes(): Promise<Quote[]> {
@@ -34,13 +82,12 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   const quotes = await getAllQuotes();
   const index = quotes.findIndex((q) => q.id === id);
 
-  if (index >= 0) {
-    quotes[index] = cloudQuote;
-  } else {
-    quotes.push(cloudQuote);
-  }
+  const updatedQuotes =
+    index >= 0
+      ? quotes.map((q, i) => (i === index ? cloudQuote : q))
+      : [...quotes, cloudQuote];
 
-  await set(QUOTES_KEY, quotes);
+  await set(QUOTES_KEY, updatedQuotes);
   return cloudQuote;
 }
 
@@ -62,22 +109,38 @@ export async function saveQuote(
   quote: Quote,
   options?: { localOnly?: boolean }
 ): Promise<{ synced: boolean }> {
-  // 1. Save locally first (offline-first)
+  // 1. Save locally first (offline-first) — upsert by ID to prevent duplicates
   const quotes = await getAllQuotes();
   const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
-  quotes.push(updatedQuote);
-  await set(QUOTES_KEY, quotes);
+  const existingIndex = quotes.findIndex((q) => q.id === quote.id);
+  const updatedQuotes =
+    existingIndex >= 0
+      ? quotes.map((q, i) => (i === existingIndex ? updatedQuote : q))
+      : [...quotes, updatedQuote];
+  await set(QUOTES_KEY, updatedQuotes);
 
-  logAudit("quote.created", "quote", updatedQuote.id, updatedQuote.customerName);
+  logAudit(
+    existingIndex >= 0 ? "quote.updated" : "quote.created",
+    "quote",
+    updatedQuote.id,
+    updatedQuote.customerName
+  );
 
   // 2. Skip cloud sync if localOnly (e.g. voice recording → edit page)
   if (options?.localOnly) {
+    await addToSyncQueue(updatedQuote.id);
     return { synced: false };
   }
 
-  // 3. Try to sync to Supabase (non-blocking)
+  // 3. Try to sync to Supabase
   const deviceToken = await getDeviceToken();
   const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
+
+  if (result.success) {
+    await removeFromSyncQueue(updatedQuote.id);
+  } else {
+    await addToSyncQueue(updatedQuote.id);
+  }
 
   return { synced: result.success };
 }
@@ -97,20 +160,22 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
 
     const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
 
-    if (existingIndex >= 0) {
-      quotes[existingIndex] = updatedQuote;
-    } else {
-      quotes.push(updatedQuote);
-    }
+    const updatedQuotes =
+      existingIndex >= 0
+        ? quotes.map((q, i) => (i === existingIndex ? updatedQuote : q))
+        : [...quotes, updatedQuote];
 
-    await set(QUOTES_KEY, quotes);
+    await set(QUOTES_KEY, updatedQuotes);
 
     // 2. Get device token and sync to Supabase (upsert — handles both new and existing)
     const deviceToken = await getDeviceToken();
     const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
 
-    if (!result.success) {
+    if (result.success) {
+      await removeFromSyncQueue(quote.id);
+    } else {
       console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
+      await addToSyncQueue(quote.id);
     }
 
     logAudit("quote.updated", "quote", quote.id, quote.customerName);
@@ -139,12 +204,17 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
     updatedAt: new Date().toISOString(),
   };
 
-  quotes[index] = updatedQuote;
-  await set(QUOTES_KEY, quotes);
+  await set(QUOTES_KEY, quotes.map((q, i) => (i === index ? updatedQuote : q)));
 
   // Sync to Supabase (upsert)
   const deviceToken = await getDeviceToken();
   const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
+
+  if (result.success) {
+    await removeFromSyncQueue(quoteId);
+  } else {
+    await addToSyncQueue(quoteId);
+  }
 
   // Pre-cache the public quote page for offline sharing
   if (updatedQuote.slug) {
@@ -209,12 +279,18 @@ export async function unlockQuoteForEditing(quoteId: string): Promise<{ success:
     updatedAt: new Date().toISOString(),
   };
 
-  quotes[index] = updatedQuote;
-  await set(QUOTES_KEY, quotes);
+  await set(QUOTES_KEY, quotes.map((q, i) => (i === index ? updatedQuote : q)));
 
   // Sync to Supabase (upsert)
   const deviceToken = await getDeviceToken();
-  await syncQuoteToSupabase(updatedQuote, deviceToken);
+  const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
+
+  if (result.success) {
+    await removeFromSyncQueue(quotes[index].id);
+  } else {
+    console.warn("[unlockQuoteForEditing] Cloud sync failed (local save succeeded):", result.error);
+    await addToSyncQueue(quotes[index].id);
+  }
 
   return { success: true };
 }
@@ -224,12 +300,17 @@ export async function deleteQuote(id: string): Promise<void> {
   // Delete locally
   const quotes = await getAllQuotes();
   const deleted = quotes.find((q) => q.id === id);
-  const filtered = quotes.filter((q) => q.id !== id);
-  await set(QUOTES_KEY, filtered);
+  await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
+
+  // Remove from sync queue (no point retrying a deleted quote)
+  await removeFromSyncQueue(id);
 
   // Get device token and try to delete from Supabase
   const deviceToken = await getDeviceToken();
-  await deleteQuoteFromSupabase(id, deviceToken);
+  const deleteResult = await deleteQuoteFromSupabase(id, deviceToken);
+  if (!deleteResult.success) {
+    console.warn("[deleteQuote] Cloud deletion failed:", deleteResult.error);
+  }
 
   logAudit("quote.deleted", "quote", id, deleted?.customerName);
 }
@@ -242,13 +323,21 @@ export async function getRecentQuotes(limit: number = 10): Promise<Quote[]> {
     .slice(0, limit);
 }
 
-// Generate unique slug
+// Generate unique slug — checks local storage to avoid collisions
 export async function generateSlug(): Promise<string> {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const quotes = await getAllQuotes();
+  const existingSlugs = new Set(quotes.map((q) => q.slug).filter(Boolean));
+
   let slug = "";
-  for (let i = 0; i < 8; i++) {
-    slug += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  let attempts = 0;
+  do {
+    slug = Array.from({ length: 8 }, () =>
+      chars.charAt(Math.floor(Math.random() * chars.length))
+    ).join("");
+    attempts++;
+  } while (existingSlugs.has(slug) && attempts < 10);
+
   return slug;
 }
 
