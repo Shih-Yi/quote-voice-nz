@@ -151,24 +151,6 @@ export function QuotePreview({ quote, showHeader = true }: QuotePreviewProps) {
         </CardContent>
       </Card>
 
-      {/* Customer Signature */}
-      {quote.signatureDataUrl && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-text-muted">Customer Signature</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="border border-border rounded-lg p-2 bg-white">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={quote.signatureDataUrl}
-                alt="Customer signature"
-                className="max-h-24 mx-auto"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

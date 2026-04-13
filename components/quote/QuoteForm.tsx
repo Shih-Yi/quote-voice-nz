@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { QuoteItem } from "./QuoteItem";
 import { ProviderInfo } from "./ProviderInfo";
-import { SignaturePad } from "./SignaturePad";
 import { QuoteAttachments } from "./QuoteAttachments";
 import { ItemTemplates } from "./ItemTemplates";
 import { formatNZD } from "@/lib/utils/currency";
@@ -127,14 +126,6 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
       };
     });
   }, [gstInclusive, updateTotals]);
-
-  const handleSignatureChange = useCallback((dataUrl: string | undefined) => {
-    setQuote((prev) => ({
-      ...prev,
-      signatureDataUrl: dataUrl,
-      updatedAt: new Date().toISOString(),
-    }));
-  }, []);
 
   const handleAttachmentsChange = useCallback((attachments: QuoteAttachment[]) => {
     setQuote((prev) => ({
@@ -273,19 +264,6 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
             onChange={(e) => handleFieldChange("notes", e.target.value)}
             placeholder="Additional notes or special instructions..."
             rows={3}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Customer Signature */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Customer Signature</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SignaturePad
-            value={quote.signatureDataUrl}
-            onChange={handleSignatureChange}
           />
         </CardContent>
       </Card>
