@@ -10,23 +10,6 @@ export async function POST(request: NextRequest) {
   const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
-  // Quota check for logged-in users
-  const user = await getCurrentUserServer();
-  if (user) {
-    const quotaCheck = await checkAndIncrementUsage(user.id, "quotes_created");
-    if (!quotaCheck.allowed) {
-      return NextResponse.json(
-        {
-          error: "quota_exceeded",
-          limit: quotaCheck.limit,
-          used: quotaCheck.used,
-          tier: "free",
-        },
-        { status: 429 }
-      );
-    }
-  }
-
   try {
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(
@@ -57,6 +40,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Quota check for logged-in users — BEFORE the API call to reject early,
+    // but only increment AFTER success (see below)
+    const user = await getCurrentUserServer();
+    if (user) {
+      const { getMonthlyUsage, getUserTier, TIER_LIMITS } = await import("@/lib/supabase/subscription");
+      const tier = await getUserTier(user.id);
+      const limits = TIER_LIMITS[tier];
+      const limit = limits.quotesPerMonth;
+      if (limit < 99999) {
+        const usage = await getMonthlyUsage(user.id);
+        if (usage.quotesCreated >= limit) {
+          return NextResponse.json(
+            {
+              error: "quota_exceeded",
+              limit,
+              used: usage.quotesCreated,
+              tier,
+            },
+            { status: 429 }
+          );
+        }
+      }
+    }
+
     const transcription = await groq.audio.transcriptions.create({
       file: audioFile,
       model: "whisper-large-v3",
@@ -64,6 +71,15 @@ export async function POST(request: NextRequest) {
       response_format: "json",
       prompt: "Use New Zealand English spelling: labour, colour, centre, metre, organised, specialised. This is a quote for trade work in New Zealand.",
     });
+
+    // Increment quota AFTER successful transcription — avoids wasting quota on API failure
+    if (user) {
+      const quotaResult = await checkAndIncrementUsage(user.id, "quotes_created");
+      if (!quotaResult.allowed) {
+        // Edge case: another request used the last quota between our check and here.
+        // Still return the transcription since Groq already processed it.
+      }
+    }
 
     return NextResponse.json({
       text: transcription.text,
