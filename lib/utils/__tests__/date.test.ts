@@ -59,8 +59,8 @@ describe("date utilities", () => {
 
     it("returns formatted date for 7+ days ago", () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-02-20T12:00:00Z"));
-      expect(formatRelativeTime("2026-02-10T12:00:00Z")).toBe("10/02/2026");
+      vi.setSystemTime(new Date("2026-02-20T12:00:00"));
+      expect(formatRelativeTime("2026-02-10T12:00:00")).toBe("10/02/2026");
     });
   });
 });
