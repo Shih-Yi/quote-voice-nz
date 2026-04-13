@@ -121,7 +121,8 @@ export async function getMonthlyUsage(userId: string): Promise<MonthlyUsage> {
 
 type UsageField = "quotes_created" | "emails_sent";
 
-// Check if a user can perform an action, then increment the counter.
+// Check if a user can perform an action, then atomically increment the counter.
+// Uses a single SQL function to avoid race conditions between concurrent requests.
 // Returns { allowed: true } or { allowed: false, limit, used }.
 export async function checkAndIncrementUsage(
   userId: string,
@@ -144,39 +145,28 @@ export async function checkAndIncrementUsage(
 
   const month = currentBillingMonth();
 
-  // Upsert row for current month, then check
-  const { data: upserted } = await supabase
-    .from("usage_stats")
-    .upsert(
-      { user_id: userId, billing_month: month, [field]: 0 },
-      { onConflict: "user_id,billing_month", ignoreDuplicates: true }
-    )
-    .select(field)
-    .single();
+  // Atomic check-and-increment via RPC — eliminates race condition
+  const { data, error } = await supabase.rpc("increment_usage_if_allowed", {
+    p_user_id: userId,
+    p_billing_month: month,
+    p_field: field,
+    p_limit: limit,
+  });
 
-  // Read current value
-  const { data: row } = await supabase
-    .from("usage_stats")
-    .select(field)
-    .eq("user_id", userId)
-    .eq("billing_month", month)
-    .single();
-
-  const used: number = (row as Record<string, number> | null)?.[field] ?? 0;
-
-  if (used >= limit) {
-    return { allowed: false, limit, used };
+  if (error) {
+    console.error("[checkAndIncrementUsage] RPC error:", error.message);
+    // Fail open: allow the action but log the error
+    return { allowed: true, limit, used: 0 };
   }
 
-  // Increment
-  await supabase
-    .from("usage_stats")
-    .update({ [field]: used + 1, updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("billing_month", month);
+  const newValue = data as number;
 
-  void upserted; // suppress unused warning
-  return { allowed: true, limit, used: used + 1 };
+  // RPC returns -1 when the user is at or over the limit
+  if (newValue === -1) {
+    return { allowed: false, limit, used: limit };
+  }
+
+  return { allowed: true, limit, used: newValue };
 }
 
 // Create or update a subscription record (called from Stripe webhook)
