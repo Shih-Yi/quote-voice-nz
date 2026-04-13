@@ -230,51 +230,56 @@ export default function PublicQuotePage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Watermark banner — free tier only */}
-      {quote.showWatermark && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-primary text-white text-center py-2 px-4 text-xs">
-          <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies &mdash; </span>
-          <a href="/pricing" className="underline font-semibold hover:text-white/80">
-            Remove watermark &rarr; Upgrade to Pro
-          </a>
-        </div>
-      )}
+      {/* Fixed bottom bar — stacks watermark, accept button, and accepted confirmation */}
+      {(quote.showWatermark || quote.status === "sent" || quote.status === "accepted") && (
+        <div className="fixed bottom-0 inset-x-0 z-40">
+          {/* Accept button — only for "sent" quotes */}
+          {quote.status === "sent" && (
+            <div className="bg-white border-t border-border p-4 shadow-lg">
+              <div className="max-w-2xl mx-auto">
+                <Button
+                  onClick={handleAcceptQuote}
+                  disabled={isAccepting}
+                  className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90"
+                >
+                  {isAccepting ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Accept Quote — {formatNZD(quote.total)}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
 
-      {/* Sticky Accept Footer — only for "sent" quotes */}
-      {quote.status === "sent" && (
-        <div className="fixed bottom-0 inset-x-0 bg-white border-t border-border p-4 shadow-lg">
-          <div className="max-w-2xl mx-auto">
-            <Button
-              onClick={handleAcceptQuote}
-              disabled={isAccepting}
-              className="w-full h-12 text-base font-semibold bg-secondary hover:bg-secondary/90"
-            >
-              {isAccepting ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          {/* Accepted confirmation */}
+          {quote.status === "accepted" && (
+            <div className="bg-green-50 border-t border-green-200 p-4">
+              <div className="max-w-2xl mx-auto text-center">
+                <p className="text-green-800 font-medium flex items-center justify-center gap-2">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Accept Quote — {formatNZD(quote.total)}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
+                  Quote accepted — the tradie has been notified
+                </p>
+              </div>
+            </div>
+          )}
 
-      {/* Accepted Confirmation */}
-      {quote.status === "accepted" && (
-        <div className="fixed bottom-0 inset-x-0 bg-green-50 border-t border-green-200 p-4">
-          <div className="max-w-2xl mx-auto text-center">
-            <p className="text-green-800 font-medium flex items-center justify-center gap-2">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Quote accepted — the tradie has been notified
-            </p>
-          </div>
+          {/* Watermark banner — free tier only, always at the very bottom */}
+          {quote.showWatermark && (
+            <div className="bg-primary text-white text-center py-2 px-4 text-xs">
+              <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies &mdash; </span>
+              <a href="/pricing" className="underline font-semibold hover:text-white/80">
+                Remove watermark &rarr; Upgrade to Pro
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>
