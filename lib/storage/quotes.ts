@@ -11,9 +11,19 @@ import {
 import { getDeviceToken } from "./deviceToken";
 import { preCacheQuotePage } from "@/lib/utils/swCache";
 import { logAudit } from "@/lib/utils/auditLog";
+import { calculateQuoteTotals } from "@/lib/utils/gst";
+
+// Recalculate subtotal/gst/total from items to ensure local consistency.
+// The DB uses GENERATED ALWAYS columns so cloud data is always correct,
+// but local IndexedDB must also reflect accurate totals for offline use.
+function withRecalculatedTotals(quote: Quote): Quote {
+  const totals = calculateQuoteTotals(quote.items, quote.gstInclusive);
+  return { ...quote, ...totals };
+}
 
 const QUOTES_KEY = "ksq_quotes";
 const SYNC_QUEUE_KEY = "ksq_sync_queue";
+const DELETE_QUEUE_KEY = "ksq_delete_queue";
 
 // --- Sync queue helpers (quote IDs that failed cloud sync and need retry) ---
 
@@ -31,6 +41,46 @@ async function removeFromSyncQueue(quoteId: string): Promise<void> {
 
 export async function getSyncQueue(): Promise<string[]> {
   return (await get<string[]>(SYNC_QUEUE_KEY)) || [];
+}
+
+// --- Delete queue helpers (quote IDs that failed cloud deletion and need retry) ---
+
+async function addToDeleteQueue(quoteId: string): Promise<void> {
+  const queue = (await get<string[]>(DELETE_QUEUE_KEY)) || [];
+  if (!queue.includes(quoteId)) {
+    await set(DELETE_QUEUE_KEY, [...queue, quoteId]);
+  }
+}
+
+async function removeFromDeleteQueue(quoteId: string): Promise<void> {
+  const queue = (await get<string[]>(DELETE_QUEUE_KEY)) || [];
+  await set(DELETE_QUEUE_KEY, queue.filter((id) => id !== quoteId));
+}
+
+export async function getDeleteQueue(): Promise<string[]> {
+  return (await get<string[]>(DELETE_QUEUE_KEY)) || [];
+}
+
+// Retry all queued cloud deletions — call this on app launch or when coming online
+export async function syncPendingDeletions(): Promise<{ deleted: number; failed: number }> {
+  const queue = await getDeleteQueue();
+  if (queue.length === 0) return { deleted: 0, failed: 0 };
+
+  const deviceToken = await getDeviceToken();
+  let deleted = 0;
+  let failed = 0;
+
+  for (const quoteId of queue) {
+    const result = await deleteQuoteFromSupabase(quoteId, deviceToken);
+    if (result.success) {
+      await removeFromDeleteQueue(quoteId);
+      deleted++;
+    } else {
+      failed++;
+    }
+  }
+
+  return { deleted, failed };
 }
 
 // Retry all queued quotes — call this on app launch or when coming online
@@ -111,7 +161,7 @@ export async function saveQuote(
 ): Promise<{ synced: boolean }> {
   // 1. Save locally first (offline-first) — upsert by ID to prevent duplicates
   const quotes = await getAllQuotes();
-  const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
+  const updatedQuote = withRecalculatedTotals({ ...quote, updatedAt: new Date().toISOString() });
   const existingIndex = quotes.findIndex((q) => q.id === quote.id);
   const updatedQuotes =
     existingIndex >= 0
@@ -138,6 +188,13 @@ export async function saveQuote(
 
   if (result.success) {
     await removeFromSyncQueue(updatedQuote.id);
+    // Server may have resolved a slug collision — update local copy if slug changed
+    if (result.slug && result.slug !== updatedQuote.slug) {
+      const currentQuotes = await getAllQuotes();
+      await set(QUOTES_KEY, currentQuotes.map((q) =>
+        q.id === updatedQuote.id ? { ...q, slug: result.slug! } : q
+      ));
+    }
   } else {
     await addToSyncQueue(updatedQuote.id);
   }
@@ -158,7 +215,7 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
     const quotes = await getAllQuotes();
     const existingIndex = quotes.findIndex((q) => q.id === quote.id);
 
-    const updatedQuote = { ...quote, updatedAt: new Date().toISOString() };
+    const updatedQuote = withRecalculatedTotals({ ...quote, updatedAt: new Date().toISOString() });
 
     const updatedQuotes =
       existingIndex >= 0
@@ -180,8 +237,10 @@ export async function updateQuote(quote: Quote): Promise<{ synced: boolean; erro
 
     logAudit("quote.updated", "quote", quote.id, quote.customerName);
 
-    // Local save already succeeded — don't surface cloud sync errors to the user
-    return { synced: result.success };
+    return {
+      synced: result.success,
+      ...(!result.success && { syncError: result.error || "Cloud sync failed" }),
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[updateQuote] Unexpected error:", err);
@@ -296,23 +355,29 @@ export async function unlockQuoteForEditing(quoteId: string): Promise<{ success:
 }
 
 // Delete quote - local and Supabase
-export async function deleteQuote(id: string): Promise<void> {
+export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; error?: string }> {
   // Delete locally
   const quotes = await getAllQuotes();
   const deleted = quotes.find((q) => q.id === id);
   await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
 
-  // Remove from sync queue (no point retrying a deleted quote)
+  // Remove from sync queue (no point syncing a deleted quote)
   await removeFromSyncQueue(id);
 
   // Get device token and try to delete from Supabase
   const deviceToken = await getDeviceToken();
   const deleteResult = await deleteQuoteFromSupabase(id, deviceToken);
-  if (!deleteResult.success) {
-    console.warn("[deleteQuote] Cloud deletion failed:", deleteResult.error);
+
+  if (deleteResult.success) {
+    await removeFromDeleteQueue(id);
+  } else {
+    console.warn("[deleteQuote] Cloud deletion failed, queued for retry:", deleteResult.error);
+    await addToDeleteQueue(id);
   }
 
   logAudit("quote.deleted", "quote", id, deleted?.customerName);
+
+  return { cloudDeleted: deleteResult.success, error: deleteResult.error };
 }
 
 // Get recent quotes (local)

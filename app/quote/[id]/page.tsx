@@ -105,7 +105,12 @@ export default function QuoteEditorPage({ params }: PageProps) {
 
       setQuote(updatedQuote);
       setIsEditing(false);
-      toast.success("Quote saved!");
+
+      if (!result.synced) {
+        toast.warning("Saved locally, but cloud sync failed. Will retry automatically.");
+      } else {
+        toast.success("Quote saved!");
+      }
     } catch (error) {
       console.error("Failed to save quote:", error);
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -136,8 +141,12 @@ export default function QuoteEditorPage({ params }: PageProps) {
     }
 
     try {
-      await deleteQuote(quote.id);
-      toast.success("Quote deleted");
+      const result = await deleteQuote(quote.id);
+      if (!result.cloudDeleted) {
+        toast.warning("Deleted locally, but cloud removal failed. Will retry automatically.");
+      } else {
+        toast.success("Quote deleted");
+      }
       router.push("/");
     } catch (error) {
       console.error("Failed to delete quote:", error);
