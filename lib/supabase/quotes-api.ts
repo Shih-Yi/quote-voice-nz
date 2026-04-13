@@ -4,7 +4,7 @@ import type { Quote } from "@/types/quote";
 export async function syncQuoteToSupabase(
   quote: Quote,
   deviceToken: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; slug?: string }> {
   try {
     const res = await fetch("/api/quotes", {
       method: "POST",
@@ -39,7 +39,9 @@ export async function syncQuoteToSupabase(
       return { success: false, error: body.error || `HTTP ${res.status}` };
     }
 
-    return { success: true };
+    const data = await res.json().catch(() => ({}));
+    // Server may resolve slug collisions — return the final slug
+    return { success: true, slug: data.slug };
   } catch (err) {
     console.error("Supabase sync exception:", err);
     return { success: false, error: "Failed to sync to cloud" };

@@ -7,6 +7,18 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function generateRandomSlug(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from({ length: 8 }, () =>
+    chars.charAt(Math.floor(Math.random() * chars.length))
+  ).join("");
+}
+
+function isSlugConflictError(error: { code?: string; message?: string }): boolean {
+  // PostgreSQL unique_violation = 23505; also check message for slug constraint
+  return error.code === "23505" && (error.message?.includes("slug") ?? false);
+}
+
 interface QuotePayload {
   id: string;
   token: string;
@@ -76,6 +88,9 @@ export async function POST(request: NextRequest) {
 
     const tokenHash = hashToken(body.token);
     const itemsSum = body.items.reduce((sum, item) => sum + item.total, 0);
+    const op = "POST";
+
+    console.log(`[/api/quotes] ${op} start id=${body.id} slug=${body.slug} status=${body.status} items=${body.items.length} items_sum=${itemsSum}`);
 
     const row = {
       id: body.id,
@@ -96,7 +111,7 @@ export async function POST(request: NextRequest) {
       notes: body.notes || null,
       gst_inclusive: body.gstInclusive,
       items_sum: itemsSum,
-      // subtotal, gst, total are GENERATED ALWAYS columns — do not insert/update
+      // subtotal, gst, total are GENERATED ALWAYS columns — computed by the database
       status: body.status || "draft",
       parent_id: body.parentId || null,
       version: body.version || 1,
@@ -111,45 +126,76 @@ export async function POST(request: NextRequest) {
       .eq("id", body.id)
       .single();
 
-    if (existing) {
-      // Existing quote — verify ownership before update
-      if (existing.owner_token_hash !== tokenHash) {
-        return NextResponse.json(
-          { error: "Access denied" },
-          { status: 403 }
-        );
-      }
-
-      // Update (exclude id and created_at)
-      const { id: _id, created_at: _createdAt, ...updateData } = row;
-      const { error } = await supabase
-        .from("quotes")
-        .update(updateData)
-        .eq("id", body.id);
-
-      if (error) {
-        console.error("[/api/quotes] Update error:", error);
-        return NextResponse.json(
-          { error: error.message },
-          { status: 500 }
-        );
-      }
-    } else {
-      // New quote — insert
-      const { error } = await supabase
-        .from("quotes")
-        .insert(row);
-
-      if (error) {
-        console.error("[/api/quotes] Insert error:", error);
-        return NextResponse.json(
-          { error: error.message },
-          { status: 500 }
-        );
-      }
+    if (existing && existing.owner_token_hash !== tokenHash) {
+      console.warn(`[/api/quotes] ${op} DENIED id=${body.id} — token mismatch`);
+      return NextResponse.json(
+        { error: "Access denied" },
+        { status: 403 }
+      );
     }
 
-    return NextResponse.json({ success: true });
+    const action = existing ? "UPDATE" : "CREATE";
+    console.log(`[/api/quotes] ${op} ${action} id=${body.id}`);
+
+    // Upsert: INSERT ... ON CONFLICT (id) DO UPDATE
+    // This uses INSERT privilege (which works) instead of UPDATE privilege
+    // (which may be missing for service_role on custom schemas).
+    // Exclude created_at for existing quotes to preserve original timestamp.
+    const { created_at: _createdAt, ...upsertBase } = row;
+    const upsertData: Record<string, unknown> = existing ? { ...upsertBase } : { ...row };
+
+    // Upsert with slug collision retry (up to 3 attempts)
+    let upsertResult: { id: string }[] | null = null;
+    let lastError: { message?: string; code?: string } | null = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: result, error } = await supabase
+        .from("quotes")
+        .upsert(upsertData, { onConflict: "id" })
+        .select("id");
+
+      if (!error) {
+        upsertResult = result;
+        lastError = null;
+        break;
+      }
+
+      // If the error is a slug UNIQUE constraint violation, regenerate slug and retry
+      if (isSlugConflictError(error) && !existing) {
+        const newSlug = generateRandomSlug();
+        console.warn(`[/api/quotes] Slug collision on "${upsertData.slug}", retrying with "${newSlug}" (attempt ${attempt + 1})`);
+        upsertData.slug = newSlug;
+        lastError = error;
+        continue;
+      }
+
+      // Non-slug error — fail immediately
+      console.error("[/api/quotes] Upsert error:", error);
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 }
+      );
+    }
+
+    if (lastError) {
+      console.error("[/api/quotes] Upsert failed after slug retries:", lastError);
+      return NextResponse.json(
+        { error: "Failed to save quote — slug collision" },
+        { status: 500 }
+      );
+    }
+
+    if (!upsertResult || upsertResult.length === 0) {
+      console.error("[/api/quotes] Upsert returned 0 rows for id:", body.id);
+      return NextResponse.json(
+        { error: "Failed to save quote — 0 rows affected" },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[/api/quotes] ${op} ${action} OK id=${body.id} slug=${upsertData.slug} items_sum=${itemsSum}`);
+    // Return the final slug (may differ from request if collision was resolved)
+    return NextResponse.json({ success: true, slug: upsertData.slug });
   } catch (err) {
     console.error("[/api/quotes] POST exception:", err);
     return NextResponse.json(
@@ -183,6 +229,8 @@ export async function DELETE(request: NextRequest) {
 
     const tokenHash = hashToken(token);
 
+    console.log(`[/api/quotes] DELETE start id=${id}`);
+
     // Verify ownership before deleting
     const { data: existing } = await supabase
       .from("quotes")
@@ -191,6 +239,7 @@ export async function DELETE(request: NextRequest) {
       .single();
 
     if (!existing) {
+      console.warn(`[/api/quotes] DELETE NOT_FOUND id=${id}`);
       return NextResponse.json(
         { error: "Quote not found" },
         { status: 404 }
@@ -198,16 +247,18 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (existing.owner_token_hash !== tokenHash) {
+      console.warn(`[/api/quotes] DELETE DENIED id=${id} — token mismatch`);
       return NextResponse.json(
         { error: "Access denied" },
         { status: 403 }
       );
     }
 
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from("quotes")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .select("id");
 
     if (error) {
       console.error("[/api/quotes] Delete error:", error);
@@ -217,6 +268,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Detect silent deletion failure (0 rows affected, no error)
+    // This can happen when service_role lacks DELETE privilege on the table
+    if (!deleted || deleted.length === 0) {
+      console.error("[/api/quotes] Delete returned 0 rows — possible permission issue for id:", id);
+      return NextResponse.json(
+        { error: "Failed to delete quote" },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[/api/quotes] DELETE OK id=${id}`);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[/api/quotes] DELETE exception:", err);
