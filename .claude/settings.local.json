@@ -19,7 +19,8 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d.get\\(k\\) for k in ['main','module','types','exports','browser'] if k in d}, indent=2\\)\\)\")",
       "Bash(rm -rf .next)",
       "Bash(kill %1)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(claude plugin:*)"
     ]
   }
 }
