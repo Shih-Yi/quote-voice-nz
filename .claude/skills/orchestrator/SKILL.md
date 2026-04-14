@@ -37,7 +37,7 @@ A complete go-to-market system has these layers. Each maps to a specific skill:
 ├─────────────────────────────────────────────────────┤
 │  LAYER 3: DESIGN & BUILD                             │
 │  Status: [Not started / In progress / Complete]      │
-│  Skills: ui-ux-pro-max                               │
+│  Skills: frontend-design                              │
 │  Output: Landing page, product pages, design system  │
 ├─────────────────────────────────────────────────────┤
 │  LAYER 4: LEAD CAPTURE                               │
@@ -84,7 +84,7 @@ Evaluate what exists by checking:
 Some skills depend on outputs from others:
 
 ```
-positioning-angles ──→ direct-response-copy ──→ ui-ux-pro-max
+positioning-angles ──→ direct-response-copy ──→ frontend-design
                                               ──→ dtc-ad
                    ──→ lead-magnet
                    ──→ keyword-research ──→ seo-content
@@ -96,7 +96,7 @@ positioning-angles ──→ direct-response-copy ──→ ui-ux-pro-max
 - `dtc-ad` benefits greatly from having copy and landing page ready
 
 **Soft dependencies (better with, but can start without):**
-- `ui-ux-pro-max` can start with rough copy and refine later
+- `frontend-design` can start with rough copy and refine later
 - `lead-magnet` can run with just the positioning angle
 - `keyword-research` can run independently at any time
 
@@ -144,7 +144,7 @@ ELSE IF positioning exists BUT no copy:
   → You need messaging before building anything
 
 ELSE IF copy exists BUT no landing page:
-  → RUN ui-ux-pro-max to design and build
+  → RUN frontend-design to design and build
   → You need somewhere to send people
 
 ELSE IF landing page exists BUT no lead capture:
@@ -217,7 +217,7 @@ Maintain a simple progress tracker:
 - [ ] Write lead magnet copy
 
 ### Layer 3: Design & Build
-- [ ] Design landing page (ui-ux-pro-max)
+- [ ] Design landing page (frontend-design)
 - [ ] Build and deploy landing page
 - [ ] Set up analytics tracking
 - [ ] Mobile responsiveness check
