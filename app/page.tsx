@@ -22,6 +22,7 @@ import { Footer } from "@/components/layout/Footer";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { useAuth } from "@/hooks/useAuth";
 import { WaitlistForm } from "@/components/landing/WaitlistForm";
+import { QuoteCalculator } from "@/components/landing/QuoteCalculator";
 
 const FAQ_ITEMS = [
   {
@@ -380,6 +381,38 @@ function LandingPageContent() {
             </div>
             <div className="inline-flex items-center gap-2 bg-primary/5 text-primary px-5 py-3 rounded-full text-sm font-medium">
               ChurQuote is currently in early access. Join the waitlist below to get in.
+            </div>
+          </div>
+        </section>
+
+        {/* Lead Magnet — Quote Time Calculator */}
+        <section className="py-20 md:py-28 px-4 bg-gradient-to-b from-white to-bg">
+          <div className="max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+              <div className="flex flex-col gap-5">
+                <h2 className="text-3xl md:text-4xl font-bold text-text">
+                  How Much Is Slow Quoting Costing You?
+                </h2>
+                <p className="text-lg text-text-muted leading-relaxed">
+                  Most tradies don&apos;t realise how many hours — and jobs — they lose to manual quoting. Find out in 60 seconds.
+                </p>
+                <ul className="space-y-3 text-text">
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
+                    <span>See exactly how many hours you waste on quotes each week</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
+                    <span>Calculate the dollar cost of losing jobs to faster quoters</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-secondary shrink-0 mt-0.5" />
+                    <span>Get a personalised comparison: your process vs. voice quoting</span>
+                  </li>
+                </ul>
+                <p className="text-sm text-text-muted">Free. Takes 60 seconds. No sign-up required to start.</p>
+              </div>
+              <QuoteCalculator />
             </div>
           </div>
         </section>
