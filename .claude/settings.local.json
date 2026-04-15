@@ -20,7 +20,13 @@
       "Bash(rm -rf .next)",
       "Bash(kill %1)",
       "Bash(wait)",
-      "Bash(claude plugin:*)"
+      "Bash(claude plugin:*)",
+      "Bash(cp:*)",
+      "mcp__plugin_everything-claude-code_exa__web_search_exa",
+      "Bash(mkdir -p /Users/sychien/.claude/skills/ui-ux-pro-max)",
+      "Bash(mkdir -p /Users/sychien/.claude/skills/gtm-pipeline)",
+      "Bash(cp /Users/sychien/.claude/skills/gtm-pipeline/SKILL.md \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/.claude/skills/gtm-pipeline/SKILL.md\")",
+      "Bash(cp /Users/sychien/.claude/skills/orchestrator/SKILL.md \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/.claude/skills/orchestrator/SKILL.md\")"
     ]
   }
 }
