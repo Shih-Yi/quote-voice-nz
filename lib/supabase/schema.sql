@@ -760,10 +760,58 @@ GRANT ALL ON ALL ROUTINES IN SCHEMA api TO service_role;
 
 -- ============================================
 -- RATE LIMIT TABLE PERMISSIONS
--- Only service_role can directly modify rate limit config
--- RPC functions handle rate_limits table internally
+-- No direct table access for anon/authenticated — all operations
+-- go through SECURITY DEFINER functions (check_rate_limit, cleanup_rate_limits)
+-- which bypass RLS and run as the function owner.
 -- ============================================
-GRANT SELECT ON api.rate_limit_config TO anon, authenticated;
-GRANT SELECT, INSERT ON api.rate_limits TO anon, authenticated;
+ALTER TABLE api.rate_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.rate_limit_config ENABLE ROW LEVEL SECURITY;
+
+-- service_role: full access for admin/cleanup operations
+CREATE POLICY "service_role_rate_limits_select" ON api.rate_limits FOR SELECT TO service_role USING (true);
+CREATE POLICY "service_role_rate_limits_insert" ON api.rate_limits FOR INSERT TO service_role WITH CHECK (true);
+CREATE POLICY "service_role_rate_limits_delete" ON api.rate_limits FOR DELETE TO service_role USING (true);
+
+CREATE POLICY "service_role_rate_limit_config_select" ON api.rate_limit_config FOR SELECT TO service_role USING (true);
+CREATE POLICY "service_role_rate_limit_config_insert" ON api.rate_limit_config FOR INSERT TO service_role WITH CHECK (true);
+CREATE POLICY "service_role_rate_limit_config_update" ON api.rate_limit_config FOR UPDATE TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_rate_limit_config_delete" ON api.rate_limit_config FOR DELETE TO service_role USING (true);
+
+-- Revoke direct table access from anon/authenticated
+-- (all operations go through SECURITY DEFINER RPC functions)
+REVOKE SELECT, INSERT, DELETE ON api.rate_limits FROM anon, authenticated;
+REVOKE SELECT ON api.rate_limit_config FROM anon, authenticated;
+
+-- RPC function execution grants (functions bypass RLS internally)
 GRANT EXECUTE ON FUNCTION api.check_rate_limit(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.cleanup_rate_limits() TO service_role;
+
+-- ============================================
+-- WAITLIST TABLE RLS
+-- All access goes through service_role key in API routes
+-- anon/authenticated have no direct access
+-- ============================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'api' AND table_name = 'waitlist'
+  ) THEN
+    EXECUTE 'ALTER TABLE api.waitlist ENABLE ROW LEVEL SECURITY';
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'api' AND tablename = 'waitlist'
+        AND policyname = 'service_role_waitlist_all'
+    ) THEN
+      EXECUTE 'CREATE POLICY "service_role_waitlist_all"
+        ON api.waitlist FOR ALL
+        TO service_role
+        USING (true)
+        WITH CHECK (true)';
+    END IF;
+
+    EXECUTE 'REVOKE ALL ON api.waitlist FROM anon, authenticated';
+  END IF;
+END;
+$$;
