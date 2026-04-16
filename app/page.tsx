@@ -125,8 +125,13 @@ function LandingPageContent() {
               <p className="text-lg md:text-xl text-text-muted max-w-lg mx-auto md:mx-0 leading-relaxed">
                 ChurQuote turns your voice into a professional, GST-calculated quote — before you&apos;ve even left the job site. No typing. No laptop. No signal needed.
               </p>
-              <div className="pt-2 max-w-md mx-auto md:mx-0 w-full">
-                <WaitlistForm />
+              <div className="pt-2">
+                <a
+                  href="/auth?tab=signup"
+                  className="inline-block bg-cta hover:bg-primary-dark text-white text-base font-semibold px-8 py-3 rounded-xl shadow-lg shadow-indigo-200/50 transition-colors"
+                >
+                  Start Quoting for Free
+                </a>
               </div>
               <p className="text-sm text-text-muted/80">
                 No credit card. No commitment. Built in Aotearoa, for Kiwi tradies.
