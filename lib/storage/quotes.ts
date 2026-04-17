@@ -250,7 +250,11 @@ export async function getQuoteById(id: string): Promise<Quote | undefined> {
 }
 
 // Fetch latest quote from cloud and update local storage.
-// Locally tombstoned quotes are NOT overwritten — the user has a pending delete.
+// Safety rules:
+//   1. Locally tombstoned quotes are NOT overwritten — the user has a pending delete.
+//   2. Quotes still in the sync queue (local edits not yet uploaded) are NOT overwritten
+//      — otherwise an older cloud snapshot would clobber pending offline work.
+//   3. If local exists and its updatedAt is newer than cloud, we keep local.
 export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   const cloudQuote = await getQuoteByIdFromSupabase(id);
   if (!cloudQuote) return null;
@@ -258,6 +262,15 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   const quotes = await getAllQuotesRaw();
   const existing = quotes.find((q) => q.id === id);
   if (existing?.deletedAt) return null;
+
+  // Pending local sync — our copy has changes the cloud hasn't seen yet.
+  const pendingSync = (await getSyncQueue()).includes(id);
+  if (pendingSync) return existing ?? null;
+
+  // Local is newer — don't overwrite with stale cloud snapshot.
+  if (existing && new Date(existing.updatedAt) >= new Date(cloudQuote.updatedAt)) {
+    return existing;
+  }
 
   const index = quotes.findIndex((q) => q.id === id);
   const updatedQuotes =
@@ -289,18 +302,30 @@ export async function saveQuote(
   quote: Quote,
   options?: { localOnly?: boolean }
 ): Promise<{ synced: boolean; syncError?: string; slug?: string }> {
-  // 1. Save locally first (offline-first) — upsert by ID to prevent duplicates
-  const quotes = await getAllQuotes();
+  // 1. Save locally first (offline-first) — upsert by ID to prevent duplicates.
+  // Use the raw store so a tombstoned-but-not-yet-purged row gets overwritten in place
+  // (deletedAt cleared) rather than appended as a duplicate.
+  const quotes = await getAllQuotesRaw();
   const updatedQuote = withRecalculatedTotals({ ...quote, updatedAt: new Date().toISOString() });
   const existingIndex = quotes.findIndex((q) => q.id === quote.id);
+  const isRevivedTombstone = existingIndex >= 0 && !!quotes[existingIndex].deletedAt;
   const updatedQuotes =
     existingIndex >= 0
-      ? quotes.map((q, i) => (i === existingIndex ? updatedQuote : q))
+      ? quotes.map((q, i) =>
+          i === existingIndex ? { ...updatedQuote, deletedAt: undefined } : q
+        )
       : [...quotes, updatedQuote];
   await set(QUOTES_KEY, updatedQuotes);
 
+  // A revived tombstone means the user just resurrected a quote that was mid-delete;
+  // drop it from the delete queue so we don't race to delete it again.
+  if (isRevivedTombstone) {
+    await removeFromDeleteQueue(updatedQuote.id);
+    await clearRetryState(DELETE_FAILURES_KEY, updatedQuote.id);
+  }
+
   logAudit(
-    existingIndex >= 0 ? "quote.updated" : "quote.created",
+    existingIndex >= 0 && !isRevivedTombstone ? "quote.updated" : "quote.created",
     "quote",
     updatedQuote.id,
     updatedQuote.customerName
@@ -351,9 +376,14 @@ export async function updateQuote(
   }
 
   try {
-    // 1. Update locally
-    const quotes = await getAllQuotes();
+    // 1. Update locally. Use raw store so tombstoned rows aren't ignored and
+    // accidentally appended as a duplicate id.
+    const quotes = await getAllQuotesRaw();
     const existingIndex = quotes.findIndex((q) => q.id === quote.id);
+
+    if (existingIndex >= 0 && quotes[existingIndex].deletedAt) {
+      return { synced: false, error: "Cannot update a deleted quote." };
+    }
 
     const updatedQuote = withRecalculatedTotals({ ...quote, updatedAt: new Date().toISOString() });
 
@@ -394,10 +424,12 @@ export async function updateQuote(
 export async function markQuoteAsSent(
   quoteId: string
 ): Promise<{ synced: boolean; syncError?: string; error?: string }> {
-  const quotes = await getAllQuotes();
+  // Use the raw store — writing back a filtered list would accidentally drop
+  // every other tombstone in storage.
+  const quotes = await getAllQuotesRaw();
   const index = quotes.findIndex((q) => q.id === quoteId);
 
-  if (index < 0) {
+  if (index < 0 || quotes[index].deletedAt) {
     return { synced: false, error: "Quote not found" };
   }
 
@@ -451,7 +483,9 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   // Find the root parent (for version chain)
   const rootParentId = original.parentId || original.id;
 
-  // Create new quote with new ID, slug, and version tracking
+  // Create new quote with new ID, slug, and version tracking.
+  // Drop per-send artefacts (customer signature, deletedAt tombstone) — those
+  // belong to the specific sent quote, not to this new draft.
   const newQuote: Quote = {
     ...original,
     id: crypto.randomUUID(),
@@ -461,10 +495,18 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
     status: "draft",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    signatureDataUrl: undefined,
+    deletedAt: undefined,
   };
 
-  // Save the duplicate
-  await saveQuote(newQuote);
+  const result = await saveQuote(newQuote);
+  if (!result.synced) {
+    // Local save still happened; caller can decide what to do. Log so the
+    // soft-failure isn't completely invisible.
+    console.warn(
+      `[duplicateQuote] New version saved locally but cloud sync failed: ${result.syncError ?? "unknown"}`
+    );
+  }
 
   logAudit("quote.duplicated", "quote", newQuote.id, `V${nextVersion} from ${quoteId}`);
 

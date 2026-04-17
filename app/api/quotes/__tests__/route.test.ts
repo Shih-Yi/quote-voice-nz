@@ -102,6 +102,48 @@ describe("POST /api/quotes", () => {
     expect(body.error).toContain("items must be an array");
   });
 
+  it("returns 400 when customerName exceeds max length", async () => {
+    const req = makeRequest("POST", validPayload({ customerName: "x".repeat(201) }));
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("customerName exceeds maximum length");
+  });
+
+  it("returns 400 when notes exceed max length", async () => {
+    const req = makeRequest("POST", validPayload({ notes: "x".repeat(5001) }));
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("notes exceeds maximum length");
+  });
+
+  it("returns 400 when item count exceeds max", async () => {
+    const items = Array.from({ length: 101 }, (_, i) => ({
+      id: `i${i}`,
+      description: "x",
+      quantity: 1,
+      unitPrice: 1,
+      total: 1,
+    }));
+    const req = makeRequest("POST", validPayload({ items }));
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("items exceeds maximum");
+  });
+
+  it("returns 400 when item description exceeds max length", async () => {
+    const items = [
+      { id: "i1", description: "x".repeat(1001), quantity: 1, unitPrice: 1, total: 1 },
+    ];
+    const req = makeRequest("POST", validPayload({ items }));
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("items[0].description exceeds maximum length");
+  });
+
   it("inserts a new quote when it does not exist", async () => {
     const { createHash } = await import("crypto");
     const tokenHash = createHash("sha256").update("dt_test_token").digest("hex");

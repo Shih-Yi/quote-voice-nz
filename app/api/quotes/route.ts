@@ -19,6 +19,20 @@ function isSlugConflictError(error: { code?: string; message?: string }): boolea
   return error.code === "23505" && (error.message?.includes("slug") ?? false);
 }
 
+// Conservative caps on free-form text fields — guards against a broken or
+// malicious client sending multi-MB strings that bloat the DB and log lines.
+const MAX_NAME_LEN = 200;
+const MAX_EMAIL_LEN = 320;          // RFC 5321
+const MAX_PHONE_LEN = 40;
+const MAX_ADDRESS_LEN = 500;
+const MAX_NOTES_LEN = 5000;
+const MAX_DESCRIPTION_LEN = 1000;
+const MAX_ITEMS = 100;
+
+function lenError(field: string, max: number): string {
+  return `${field} exceeds maximum length (${max})`;
+}
+
 interface QuotePayload {
   id: string;
   token: string;
@@ -86,6 +100,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Length caps — reject oversized strings and runaway item counts.
+    const lengthChecks: Array<[string, string | null | undefined, number]> = [
+      ["customerName", body.customerName, MAX_NAME_LEN],
+      ["customerEmail", body.customerEmail, MAX_EMAIL_LEN],
+      ["customerPhone", body.customerPhone, MAX_PHONE_LEN],
+      ["customerAddress", body.customerAddress, MAX_ADDRESS_LEN],
+      ["notes", body.notes, MAX_NOTES_LEN],
+    ];
+    for (const [field, value, max] of lengthChecks) {
+      if (typeof value === "string" && value.length > max) {
+        return NextResponse.json({ error: lenError(field, max) }, { status: 400 });
+      }
+    }
+
+    if (body.items.length > MAX_ITEMS) {
+      return NextResponse.json(
+        { error: `items exceeds maximum (${MAX_ITEMS})` },
+        { status: 400 }
+      );
+    }
+
     // Recompute item totals and items_sum server-side. The client sends total for
     // offline convenience, but never trust it — the DB's GENERATED columns derive
     // subtotal/gst/total from items_sum, so a tampered client total would flow
@@ -109,6 +144,12 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(unitPrice) || unitPrice < 0) {
         return NextResponse.json(
           { error: `items[${index}].unitPrice must be a non-negative number` },
+          { status: 400 }
+        );
+      }
+      if (typeof item.description === "string" && item.description.length > MAX_DESCRIPTION_LEN) {
+        return NextResponse.json(
+          { error: lenError(`items[${index}].description`, MAX_DESCRIPTION_LEN) },
           { status: 400 }
         );
       }

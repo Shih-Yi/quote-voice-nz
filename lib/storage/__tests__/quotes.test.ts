@@ -21,9 +21,12 @@ vi.mock("@/lib/supabase/quotes-api", () => ({
   deleteQuoteFromSupabase: (...args: unknown[]) => mockDeleteQuoteFromSupabase(...args),
 }));
 
+const mockGetQuoteByIdFromSupabase = vi.fn().mockResolvedValue(null);
+const mockGetQuoteBySlugFromSupabase = vi.fn().mockResolvedValue(null);
+
 vi.mock("@/lib/supabase/quotes", () => ({
-  getQuoteBySlugFromSupabase: vi.fn().mockResolvedValue(null),
-  getQuoteByIdFromSupabase: vi.fn().mockResolvedValue(null),
+  getQuoteBySlugFromSupabase: (...args: unknown[]) => mockGetQuoteBySlugFromSupabase(...args),
+  getQuoteByIdFromSupabase: (...args: unknown[]) => mockGetQuoteByIdFromSupabase(...args),
 }));
 
 vi.mock("@/lib/storage/deviceToken", () => ({
@@ -77,6 +80,8 @@ describe("quotes storage", () => {
     mockStore.clear();
     mockSyncQuoteToSupabase.mockReset().mockResolvedValue({ success: true });
     mockDeleteQuoteFromSupabase.mockReset().mockResolvedValue({ success: true });
+    mockGetQuoteByIdFromSupabase.mockReset().mockResolvedValue(null);
+    mockGetQuoteBySlugFromSupabase.mockReset().mockResolvedValue(null);
   });
 
   // ─── READ ─────────────────────────────────────────────
@@ -240,6 +245,24 @@ describe("quotes storage", () => {
       expect(stored).toHaveLength(1);
       expect(stored[0].customerName).toBe("Updated Name");
     });
+
+    it("revives a tombstoned row in-place rather than duplicating", async () => {
+      const tomb = makeQuote({
+        id: "revive-q",
+        deletedAt: "2026-03-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [tomb]);
+      mockStore.set("ksq_delete_queue", ["revive-q"]);
+
+      await saveQuote(makeQuote({ id: "revive-q", customerName: "Revived" }));
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].deletedAt).toBeUndefined();
+      expect(stored[0].customerName).toBe("Revived");
+      // Revival drops the delete-queue entry so we don't race to re-delete.
+      expect((mockStore.get("ksq_delete_queue") as string[]) ?? []).not.toContain("revive-q");
+    });
   });
 
   // ─── UPDATE ───────────────────────────────────────────
@@ -312,6 +335,19 @@ describe("quotes storage", () => {
 
       const stored = mockStore.get("ksq_quotes") as Quote[];
       expect(stored[0].updatedAt).not.toBe("2020-01-01T00:00:00Z");
+    });
+
+    it("refuses to update a tombstoned quote", async () => {
+      const tomb = makeQuote({
+        id: "tomb-upd",
+        deletedAt: "2026-03-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [tomb]);
+
+      const result = await updateQuote(tomb);
+      expect(result.synced).toBe(false);
+      expect(result.error).toBe("Cannot update a deleted quote.");
+      expect(mockSyncQuoteToSupabase).not.toHaveBeenCalled();
     });
   });
 
@@ -425,6 +461,89 @@ describe("quotes storage", () => {
     });
   });
 
+  // ─── REFRESH FROM CLOUD ──────────────────────────────
+
+  describe("refreshQuoteFromCloud", () => {
+    it("does not clobber local when it's pending sync", async () => {
+      const local = makeQuote({
+        id: "pending-q",
+        customerName: "Local edit",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      const cloud = makeQuote({
+        id: "pending-q",
+        customerName: "Older cloud",
+        updatedAt: "2025-12-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [local]);
+      mockStore.set("ksq_sync_queue", ["pending-q"]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValue(cloud);
+
+      const { refreshQuoteFromCloud } = await import("../quotes");
+      const result = await refreshQuoteFromCloud("pending-q");
+
+      expect(result?.customerName).toBe("Local edit");
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].customerName).toBe("Local edit");
+    });
+
+    it("does not clobber local when local is newer than cloud", async () => {
+      const local = makeQuote({
+        id: "newer-q",
+        customerName: "Fresh local",
+        updatedAt: "2026-02-01T00:00:00Z",
+      });
+      const cloud = makeQuote({
+        id: "newer-q",
+        customerName: "Stale cloud",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValue(cloud);
+
+      const { refreshQuoteFromCloud } = await import("../quotes");
+      const result = await refreshQuoteFromCloud("newer-q");
+
+      expect(result?.customerName).toBe("Fresh local");
+    });
+
+    it("overwrites local when cloud is newer and no pending sync", async () => {
+      const local = makeQuote({
+        id: "old-q",
+        customerName: "Stale local",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      const cloud = makeQuote({
+        id: "old-q",
+        customerName: "Fresh cloud",
+        updatedAt: "2026-02-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValue(cloud);
+
+      const { refreshQuoteFromCloud } = await import("../quotes");
+      const result = await refreshQuoteFromCloud("old-q");
+
+      expect(result?.customerName).toBe("Fresh cloud");
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].customerName).toBe("Fresh cloud");
+    });
+
+    it("returns null for locally tombstoned quotes (no overwrite)", async () => {
+      const tombstone = makeQuote({
+        id: "tomb-q",
+        deletedAt: "2026-03-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [tombstone]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValue(makeQuote({ id: "tomb-q" }));
+
+      const { refreshQuoteFromCloud } = await import("../quotes");
+      const result = await refreshQuoteFromCloud("tomb-q");
+
+      expect(result).toBeNull();
+    });
+  });
+
   // ─── SYNC + DELETE QUEUE INTERACTION ──────────────────
 
   describe("syncPendingDeletions with tombstones", () => {
@@ -520,6 +639,30 @@ describe("quotes storage", () => {
       const queue = mockStore.get("ksq_sync_queue") as string[];
       expect(queue).toContain("send-q");
     });
+
+    it("preserves other tombstones when writing back", async () => {
+      const tomb = makeQuote({
+        id: "other-tomb",
+        deletedAt: "2026-03-01T00:00:00Z",
+      });
+      const draft = makeQuote({ id: "send-q" });
+      mockStore.set("ksq_quotes", [tomb, draft]);
+
+      await markQuoteAsSent("send-q");
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(2);
+      expect(stored.find((q) => q.id === "other-tomb")?.deletedAt).toBe("2026-03-01T00:00:00Z");
+    });
+
+    it("refuses to mark a tombstoned quote as sent", async () => {
+      const tomb = makeQuote({ id: "tomb-send", deletedAt: "2026-03-01T00:00:00Z" });
+      mockStore.set("ksq_quotes", [tomb]);
+
+      const result = await markQuoteAsSent("tomb-send");
+      expect(result.synced).toBe(false);
+      expect(result.error).toBe("Quote not found");
+    });
   });
 
   // ─── DUPLICATE ────────────────────────────────────────
@@ -570,6 +713,18 @@ describe("quotes storage", () => {
 
       const v3 = await duplicateQuote("v2");
       expect(v3!.parentId).toBe("root"); // Points to root, not v2
+    });
+
+    it("does not carry signatureDataUrl into the new version", async () => {
+      const original = makeQuote({
+        id: "sig-orig",
+        version: 1,
+        signatureDataUrl: "data:image/png;base64,AAA",
+      });
+      mockStore.set("ksq_quotes", [original]);
+
+      const dup = await duplicateQuote("sig-orig");
+      expect(dup!.signatureDataUrl).toBeUndefined();
     });
   });
 
