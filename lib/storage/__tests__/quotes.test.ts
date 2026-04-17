@@ -461,6 +461,55 @@ describe("quotes storage", () => {
     });
   });
 
+  // ─── GET BY SLUG ─────────────────────────────────────
+
+  describe("getQuoteBySlug", () => {
+    it("returns the local quote without hitting cloud", async () => {
+      const local = makeQuote({ id: "loc-q", slug: "localslug" });
+      mockStore.set("ksq_quotes", [local]);
+
+      const { getQuoteBySlug } = await import("../quotes");
+      const result = await getQuoteBySlug("localslug");
+
+      expect(result?.id).toBe("loc-q");
+      expect(mockGetQuoteBySlugFromSupabase).not.toHaveBeenCalled();
+    });
+
+    it("falls back to cloud when slug is unknown locally", async () => {
+      const cloud = makeQuote({ id: "cloud-q", slug: "cloudslug" });
+      mockGetQuoteBySlugFromSupabase.mockResolvedValue(cloud);
+
+      const { getQuoteBySlug } = await import("../quotes");
+      const result = await getQuoteBySlug("cloudslug");
+
+      expect(result?.id).toBe("cloud-q");
+      expect(mockGetQuoteBySlugFromSupabase).toHaveBeenCalledWith("cloudslug");
+    });
+
+    it("returns undefined when slug is unknown locally and in cloud", async () => {
+      const { getQuoteBySlug } = await import("../quotes");
+      const result = await getQuoteBySlug("missing");
+
+      expect(result).toBeUndefined();
+    });
+
+    it("does not return tombstoned local match", async () => {
+      const tomb = makeQuote({
+        id: "tomb-q",
+        slug: "tombslug",
+        deletedAt: "2026-03-01T00:00:00Z",
+      });
+      mockStore.set("ksq_quotes", [tomb]);
+
+      const { getQuoteBySlug } = await import("../quotes");
+      const result = await getQuoteBySlug("tombslug");
+
+      // Tombstoned — falls through to cloud (which returns null here).
+      expect(result).toBeUndefined();
+      expect(mockGetQuoteBySlugFromSupabase).toHaveBeenCalled();
+    });
+  });
+
   // ─── REFRESH FROM CLOUD ──────────────────────────────
 
   describe("refreshQuoteFromCloud", () => {
