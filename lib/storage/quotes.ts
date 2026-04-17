@@ -62,6 +62,7 @@ export async function getDeleteQueue(): Promise<string[]> {
 }
 
 // Retry all queued cloud deletions — call this on app launch or when coming online
+// On cloud-delete success we also physically purge the tombstone from local storage.
 export async function syncPendingDeletions(): Promise<{ deleted: number; failed: number }> {
   const queue = await getDeleteQueue();
   if (queue.length === 0) return { deleted: 0, failed: 0 };
@@ -73,6 +74,7 @@ export async function syncPendingDeletions(): Promise<{ deleted: number; failed:
   for (const quoteId of queue) {
     const result = await deleteQuoteFromSupabase(quoteId, deviceToken);
     if (result.success) {
+      await purgeLocalQuote(quoteId);
       await removeFromDeleteQueue(quoteId);
       deleted++;
     } else {
@@ -93,9 +95,9 @@ export async function syncPendingQuotes(): Promise<{ synced: number; failed: num
   let failed = 0;
 
   for (const quoteId of queue) {
-    const quote = await getQuoteById(quoteId);
-    if (!quote) {
-      // Quote deleted locally — remove from queue silently
+    const quote = await findQuoteByIdRaw(quoteId);
+    if (!quote || quote.deletedAt) {
+      // Quote purged or tombstoned locally — don't sync a deleted quote
       await removeFromSyncQueue(quoteId);
       continue;
     }
@@ -112,26 +114,48 @@ export async function syncPendingQuotes(): Promise<{ synced: number; failed: num
   return { synced, failed };
 }
 
-// Get all quotes from local storage
-export async function getAllQuotes(): Promise<Quote[]> {
+// Internal: read the raw quotes array including tombstones.
+// Used by sync machinery and slug-collision checks, which need to see deleted-but-not-yet-purged rows.
+async function getAllQuotesRaw(): Promise<Quote[]> {
   const quotes = await get<Quote[]>(QUOTES_KEY);
   return quotes || [];
 }
 
-// Get quote by ID (local only)
+// Internal: find a quote by ID including tombstoned ones.
+async function findQuoteByIdRaw(id: string): Promise<Quote | undefined> {
+  const quotes = await getAllQuotesRaw();
+  return quotes.find((q) => q.id === id);
+}
+
+// Internal: physically remove a quote from IndexedDB (used after confirmed cloud delete).
+async function purgeLocalQuote(id: string): Promise<void> {
+  const quotes = await getAllQuotesRaw();
+  await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
+}
+
+// Get all quotes from local storage (tombstoned quotes are hidden)
+export async function getAllQuotes(): Promise<Quote[]> {
+  const quotes = await getAllQuotesRaw();
+  return quotes.filter((q) => !q.deletedAt);
+}
+
+// Get quote by ID (local only; tombstoned quotes are hidden)
 export async function getQuoteById(id: string): Promise<Quote | undefined> {
   const quotes = await getAllQuotes();
   return quotes.find((q) => q.id === id);
 }
 
-// Fetch latest quote from cloud and update local storage
+// Fetch latest quote from cloud and update local storage.
+// Locally tombstoned quotes are NOT overwritten — the user has a pending delete.
 export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   const cloudQuote = await getQuoteByIdFromSupabase(id);
   if (!cloudQuote) return null;
 
-  const quotes = await getAllQuotes();
-  const index = quotes.findIndex((q) => q.id === id);
+  const quotes = await getAllQuotesRaw();
+  const existing = quotes.find((q) => q.id === id);
+  if (existing?.deletedAt) return null;
 
+  const index = quotes.findIndex((q) => q.id === id);
   const updatedQuotes =
     index >= 0
       ? quotes.map((q, i) => (i === index ? cloudQuote : q))
@@ -204,7 +228,12 @@ export async function saveQuote(
 
 // Update EXISTING quote - local first, then sync to Supabase
 // Note: Only works for "draft" status quotes
-export async function updateQuote(quote: Quote): Promise<{ synced: boolean; error?: string }> {
+// Return shape:
+//   error     — hard failure (can't save; caller should surface and abort)
+//   syncError — soft failure (saved locally, cloud retry pending; caller may warn)
+export async function updateQuote(
+  quote: Quote
+): Promise<{ synced: boolean; error?: string; syncError?: string }> {
   // Check if quote is locked (sent/accepted)
   if (quote.status !== "draft") {
     return { synced: false, error: "Cannot edit sent quotes. Please duplicate instead." };
@@ -322,28 +351,59 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   return newQuote;
 }
 
-// Delete quote - local and Supabase
+// Delete quote using tombstone pattern:
+//   1. Mark the row with `deletedAt` so it disappears from UI lists.
+//   2. Try cloud delete.
+//   3. On success → physically purge locally.
+//      On failure → keep the tombstone and queue for retry in syncPendingDeletions.
+// This prevents the data-loss window where the local row is gone before we know
+// the cloud accepted the delete.
+//
+// Fast path: if the quote was never synced to the cloud (still in the sync queue),
+// we purge locally without a cloud call — the cloud never knew about it.
 export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; error?: string }> {
-  // Delete locally
-  const quotes = await getAllQuotes();
-  const deleted = quotes.find((q) => q.id === id);
-  await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
+  const raw = await getAllQuotesRaw();
+  const existing = raw.find((q) => q.id === id);
 
-  // Remove from sync queue (no point syncing a deleted quote)
+  // Already purged or never existed — idempotent success.
+  if (!existing) {
+    await removeFromSyncQueue(id);
+    await removeFromDeleteQueue(id);
+    return { cloudDeleted: true };
+  }
+
+  const pendingSync = (await getSyncQueue()).includes(id);
+
+  // Fast path: never uploaded to cloud — just purge locally, no cloud round-trip needed.
+  if (pendingSync) {
+    await purgeLocalQuote(id);
+    await removeFromSyncQueue(id);
+    await removeFromDeleteQueue(id);
+    logAudit("quote.deleted", "quote", id, existing.customerName);
+    return { cloudDeleted: true };
+  }
+
+  // Tombstone: mark deletedAt so UI lists hide it, but keep the row until cloud confirms.
+  const tombstoned: Quote = { ...existing, deletedAt: new Date().toISOString() };
+  await set(
+    QUOTES_KEY,
+    raw.map((q) => (q.id === id ? tombstoned : q))
+  );
   await removeFromSyncQueue(id);
 
-  // Get device token and try to delete from Supabase
+  logAudit("quote.deleted", "quote", id, existing.customerName);
+
   const deviceToken = await getDeviceToken();
   const deleteResult = await deleteQuoteFromSupabase(id, deviceToken);
 
   if (deleteResult.success) {
+    // Cloud confirmed — safe to physically remove.
+    await purgeLocalQuote(id);
     await removeFromDeleteQueue(id);
   } else {
     console.warn("[deleteQuote] Cloud deletion failed, queued for retry:", deleteResult.error);
     await addToDeleteQueue(id);
   }
-
-  logAudit("quote.deleted", "quote", id, deleted?.customerName);
 
   return { cloudDeleted: deleteResult.success, error: deleteResult.error };
 }
@@ -356,10 +416,11 @@ export async function getRecentQuotes(limit: number = 10): Promise<Quote[]> {
     .slice(0, limit);
 }
 
-// Generate unique slug — checks local storage to avoid collisions
+// Generate unique slug — checks local storage (including tombstones) to avoid collisions.
+// Tombstoned quotes still occupy their slug on the server until cloud delete confirms.
 export async function generateSlug(): Promise<string> {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const quotes = await getAllQuotes();
+  const quotes = await getAllQuotesRaw();
   const existingSlugs = new Set(quotes.map((q) => q.slug).filter(Boolean));
 
   let slug = "";

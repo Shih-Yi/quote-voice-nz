@@ -269,8 +269,8 @@ describe("quotes storage", () => {
 
       const result = await updateQuote(quote);
       expect(result.synced).toBe(false);
-      // syncError is spread into the return value
-      expect((result as Record<string, unknown>).syncError).toBe("DB timeout");
+      expect(result.syncError).toBe("DB timeout");
+      expect(result.error).toBeUndefined();
     });
 
     it("adds to sync queue when cloud sync fails", async () => {
@@ -344,6 +344,102 @@ describe("quotes storage", () => {
 
       const deleteQueue = mockStore.get("ksq_delete_queue") as string[];
       expect(deleteQueue).toContain("del-q");
+    });
+
+    // ─── Tombstone behaviour ──────────────────────────
+
+    it("keeps a tombstone (not a physical purge) when cloud delete fails", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({ success: false, error: "Network" });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "del-q" })]);
+
+      await deleteQuote("del-q");
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].id).toBe("del-q");
+      expect(stored[0].deletedAt).toBeTruthy();
+    });
+
+    it("physically purges from local storage on cloud-delete success", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({ success: true });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "del-q" })]);
+
+      await deleteQuote("del-q");
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(0);
+    });
+
+    it("hides tombstoned quotes from getAllQuotes and getQuoteById", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({ success: false, error: "Offline" });
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "keep-q" }),
+        makeQuote({ id: "del-q" }),
+      ]);
+
+      await deleteQuote("del-q");
+
+      const visible = await getAllQuotes();
+      expect(visible.map((q) => q.id)).toEqual(["keep-q"]);
+      expect(await getQuoteById("del-q")).toBeUndefined();
+    });
+
+    it("fast-path: purges locally without calling Supabase for never-synced quotes", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "offline-q" })]);
+      mockStore.set("ksq_sync_queue", ["offline-q"]);
+
+      const result = await deleteQuote("offline-q");
+
+      expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
+      expect(result.cloudDeleted).toBe(true);
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(0);
+      const syncQueue = mockStore.get("ksq_sync_queue") as string[];
+      expect(syncQueue).not.toContain("offline-q");
+    });
+
+    it("is idempotent — deleting a non-existent quote returns success", async () => {
+      const result = await deleteQuote("never-existed");
+
+      expect(result.cloudDeleted).toBe(true);
+      expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── SYNC + DELETE QUEUE INTERACTION ──────────────────
+
+  describe("syncPendingDeletions with tombstones", () => {
+    it("physically purges tombstoned quote after cloud-delete success", async () => {
+      mockDeleteQuoteFromSupabase
+        .mockResolvedValueOnce({ success: false, error: "Offline" })  // initial delete
+        .mockResolvedValueOnce({ success: true });                      // retry
+      mockStore.set("ksq_quotes", [makeQuote({ id: "retry-q" })]);
+
+      await deleteQuote("retry-q");
+      // After failed delete: tombstone remains, queued for retry
+      expect((mockStore.get("ksq_quotes") as Quote[])).toHaveLength(1);
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      expect(result.deleted).toBe(1);
+      expect((mockStore.get("ksq_quotes") as Quote[])).toHaveLength(0);
+      expect((mockStore.get("ksq_delete_queue") as string[]) ?? []).not.toContain("retry-q");
+    });
+  });
+
+  describe("syncPendingQuotes skips tombstoned quotes", () => {
+    it("removes tombstoned quote from sync queue without calling Supabase", async () => {
+      // Quote is queued for sync AND tombstoned (edge case: user deleted before sync finished)
+      const tombstoned = makeQuote({ id: "zombie-q", deletedAt: "2026-04-17T00:00:00Z" });
+      mockStore.set("ksq_quotes", [tombstoned]);
+      mockStore.set("ksq_sync_queue", ["zombie-q"]);
+
+      const result = await syncPendingQuotes();
+
+      expect(mockSyncQuoteToSupabase).not.toHaveBeenCalled();
+      expect(result.synced).toBe(0);
+      expect((mockStore.get("ksq_sync_queue") as string[])).not.toContain("zombie-q");
     });
   });
 
