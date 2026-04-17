@@ -24,6 +24,52 @@ function withRecalculatedTotals(quote: Quote): Quote {
 const QUOTES_KEY = "ksq_quotes";
 const SYNC_QUEUE_KEY = "ksq_sync_queue";
 const DELETE_QUEUE_KEY = "ksq_delete_queue";
+const SYNC_FAILURES_KEY = "ksq_sync_failures";
+const DELETE_FAILURES_KEY = "ksq_delete_failures";
+
+// Cap retry attempts so a permanently broken request (e.g. 403) doesn't hammer
+// the server forever. After MAX_RETRY_ATTEMPTS, the ID is dropped from the
+// queue and the user must re-save / re-delete to kick retries back off.
+const MAX_RETRY_ATTEMPTS = 5;
+// Exponential backoff base (ms). Delay before next attempt = BASE * 2^(attempts-1).
+//   attempt 1 fail → wait 10s
+//   attempt 2 fail → wait 20s
+//   attempt 3 fail → wait 40s
+//   attempt 4 fail → wait 80s
+//   attempt 5 fail → give up
+const BASE_BACKOFF_MS = 10_000;
+
+interface RetryState {
+  attempts: number;
+  lastAttemptAt: string;
+}
+
+async function getRetryState(key: string, id: string): Promise<RetryState | undefined> {
+  const map = (await get<Record<string, RetryState>>(key)) || {};
+  return map[id];
+}
+
+async function recordRetryFailure(key: string, id: string): Promise<number> {
+  const map = (await get<Record<string, RetryState>>(key)) || {};
+  const prev = map[id];
+  const attempts = (prev?.attempts ?? 0) + 1;
+  map[id] = { attempts, lastAttemptAt: new Date().toISOString() };
+  await set(key, map);
+  return attempts;
+}
+
+async function clearRetryState(key: string, id: string): Promise<void> {
+  const map = (await get<Record<string, RetryState>>(key)) || {};
+  if (id in map) {
+    delete map[id];
+    await set(key, map);
+  }
+}
+
+function isBackoffActive(state: RetryState): boolean {
+  const delay = BASE_BACKOFF_MS * Math.pow(2, Math.max(0, state.attempts - 1));
+  return Date.now() - new Date(state.lastAttemptAt).getTime() < delay;
+}
 
 // --- Sync queue helpers (quote IDs that failed cloud sync and need retry) ---
 
@@ -63,55 +109,113 @@ export async function getDeleteQueue(): Promise<string[]> {
 
 // Retry all queued cloud deletions — call this on app launch or when coming online
 // On cloud-delete success we also physically purge the tombstone from local storage.
-export async function syncPendingDeletions(): Promise<{ deleted: number; failed: number }> {
+// Skipped IDs are in their backoff window; gaveUp IDs hit MAX_RETRY_ATTEMPTS and
+// were force-purged locally (orphan row may remain on cloud).
+export async function syncPendingDeletions(): Promise<{
+  deleted: number;
+  failed: number;
+  skipped: number;
+  gaveUp: number;
+}> {
   const queue = await getDeleteQueue();
-  if (queue.length === 0) return { deleted: 0, failed: 0 };
+  if (queue.length === 0) return { deleted: 0, failed: 0, skipped: 0, gaveUp: 0 };
 
   const deviceToken = await getDeviceToken();
   let deleted = 0;
   let failed = 0;
+  let skipped = 0;
+  let gaveUp = 0;
 
   for (const quoteId of queue) {
+    const state = await getRetryState(DELETE_FAILURES_KEY, quoteId);
+
+    if (state && state.attempts >= MAX_RETRY_ATTEMPTS) {
+      console.error(
+        `[syncPendingDeletions] GAVE UP id=${quoteId} after ${state.attempts} attempts — force-purging local tombstone`
+      );
+      await purgeLocalQuote(quoteId);
+      await removeFromDeleteQueue(quoteId);
+      await clearRetryState(DELETE_FAILURES_KEY, quoteId);
+      gaveUp++;
+      continue;
+    }
+
+    if (state && isBackoffActive(state)) {
+      skipped++;
+      continue;
+    }
+
     const result = await deleteQuoteFromSupabase(quoteId, deviceToken);
     if (result.success) {
       await purgeLocalQuote(quoteId);
       await removeFromDeleteQueue(quoteId);
+      await clearRetryState(DELETE_FAILURES_KEY, quoteId);
       deleted++;
     } else {
+      await recordRetryFailure(DELETE_FAILURES_KEY, quoteId);
       failed++;
     }
   }
 
-  return { deleted, failed };
+  return { deleted, failed, skipped, gaveUp };
 }
 
 // Retry all queued quotes — call this on app launch or when coming online
-export async function syncPendingQuotes(): Promise<{ synced: number; failed: number }> {
+// Skipped IDs are in their backoff window; gaveUp IDs hit MAX_RETRY_ATTEMPTS
+// (quote stays local, dropped from auto-retry — re-saving re-queues).
+export async function syncPendingQuotes(): Promise<{
+  synced: number;
+  failed: number;
+  skipped: number;
+  gaveUp: number;
+}> {
   const queue = await getSyncQueue();
-  if (queue.length === 0) return { synced: 0, failed: 0 };
+  if (queue.length === 0) return { synced: 0, failed: 0, skipped: 0, gaveUp: 0 };
 
   const deviceToken = await getDeviceToken();
   let synced = 0;
   let failed = 0;
+  let skipped = 0;
+  let gaveUp = 0;
 
   for (const quoteId of queue) {
     const quote = await findQuoteByIdRaw(quoteId);
     if (!quote || quote.deletedAt) {
       // Quote purged or tombstoned locally — don't sync a deleted quote
       await removeFromSyncQueue(quoteId);
+      await clearRetryState(SYNC_FAILURES_KEY, quoteId);
+      continue;
+    }
+
+    const state = await getRetryState(SYNC_FAILURES_KEY, quoteId);
+
+    if (state && state.attempts >= MAX_RETRY_ATTEMPTS) {
+      console.error(
+        `[syncPendingQuotes] GAVE UP id=${quoteId} after ${state.attempts} attempts — dropping from queue`
+      );
+      await removeFromSyncQueue(quoteId);
+      await clearRetryState(SYNC_FAILURES_KEY, quoteId);
+      gaveUp++;
+      continue;
+    }
+
+    if (state && isBackoffActive(state)) {
+      skipped++;
       continue;
     }
 
     const result = await syncQuoteToSupabase(quote, deviceToken);
     if (result.success) {
       await removeFromSyncQueue(quoteId);
+      await clearRetryState(SYNC_FAILURES_KEY, quoteId);
       synced++;
     } else {
+      await recordRetryFailure(SYNC_FAILURES_KEY, quoteId);
       failed++;
     }
   }
 
-  return { synced, failed };
+  return { synced, failed, skipped, gaveUp };
 }
 
 // Internal: read the raw quotes array including tombstones.
@@ -165,24 +269,26 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
   return cloudQuote;
 }
 
-// Get quote by slug - try Supabase first (for public sharing), fallback to local
+// Get quote by slug — local first (offline-first), then Supabase for unknown slugs.
+// Owners opening their own quotes hit IndexedDB instantly; shared public links still
+// fall through to the cloud lookup.
 export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
-  // Try Supabase first (for shared links)
-  const cloudQuote = await getQuoteBySlugFromSupabase(slug);
-  if (cloudQuote) {
-    return cloudQuote;
-  }
-
-  // Fallback to local
   const quotes = await getAllQuotes();
-  return quotes.find((q) => q.slug === slug);
+  const local = quotes.find((q) => q.slug === slug);
+  if (local) return local;
+
+  const cloudQuote = await getQuoteBySlugFromSupabase(slug);
+  return cloudQuote ?? undefined;
 }
 
-// Save NEW quote - local first, optionally sync to Supabase
+// Save NEW quote - local first, optionally sync to Supabase.
+// Return shape mirrors updateQuote: `syncError` on soft failure lets callers
+// surface a "saved locally, cloud retry pending" warning instead of silently
+// swallowing the failure.
 export async function saveQuote(
   quote: Quote,
   options?: { localOnly?: boolean }
-): Promise<{ synced: boolean }> {
+): Promise<{ synced: boolean; syncError?: string; slug?: string }> {
   // 1. Save locally first (offline-first) — upsert by ID to prevent duplicates
   const quotes = await getAllQuotes();
   const updatedQuote = withRecalculatedTotals({ ...quote, updatedAt: new Date().toISOString() });
@@ -212,18 +318,23 @@ export async function saveQuote(
 
   if (result.success) {
     await removeFromSyncQueue(updatedQuote.id);
+    await clearRetryState(SYNC_FAILURES_KEY, updatedQuote.id);
     // Server may have resolved a slug collision — update local copy if slug changed
+    let finalSlug = updatedQuote.slug;
     if (result.slug && result.slug !== updatedQuote.slug) {
-      const currentQuotes = await getAllQuotes();
+      finalSlug = result.slug;
+      const currentQuotes = await getAllQuotesRaw();
       await set(QUOTES_KEY, currentQuotes.map((q) =>
         q.id === updatedQuote.id ? { ...q, slug: result.slug! } : q
       ));
     }
-  } else {
-    await addToSyncQueue(updatedQuote.id);
+    return { synced: true, slug: finalSlug };
   }
 
-  return { synced: result.success };
+  console.warn("[saveQuote] Cloud sync failed (local save succeeded):", result.error);
+  await addToSyncQueue(updatedQuote.id);
+  await recordRetryFailure(SYNC_FAILURES_KEY, updatedQuote.id);
+  return { synced: false, syncError: result.error || "Cloud sync failed" };
 }
 
 // Update EXISTING quote - local first, then sync to Supabase
@@ -259,9 +370,11 @@ export async function updateQuote(
 
     if (result.success) {
       await removeFromSyncQueue(quote.id);
+      await clearRetryState(SYNC_FAILURES_KEY, quote.id);
     } else {
       console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
       await addToSyncQueue(quote.id);
+      await recordRetryFailure(SYNC_FAILURES_KEY, quote.id);
     }
 
     logAudit("quote.updated", "quote", quote.id, quote.customerName);
@@ -278,12 +391,14 @@ export async function updateQuote(
 }
 
 // Mark quote as sent (locks the quote)
-export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolean }> {
+export async function markQuoteAsSent(
+  quoteId: string
+): Promise<{ synced: boolean; syncError?: string; error?: string }> {
   const quotes = await getAllQuotes();
   const index = quotes.findIndex((q) => q.id === quoteId);
 
   if (index < 0) {
-    return { synced: false };
+    return { synced: false, error: "Quote not found" };
   }
 
   const updatedQuote = {
@@ -300,8 +415,11 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
 
   if (result.success) {
     await removeFromSyncQueue(quoteId);
+    await clearRetryState(SYNC_FAILURES_KEY, quoteId);
   } else {
+    console.warn("[markQuoteAsSent] Cloud sync failed (local save succeeded):", result.error);
     await addToSyncQueue(quoteId);
+    await recordRetryFailure(SYNC_FAILURES_KEY, quoteId);
   }
 
   // Pre-cache the public quote page for offline sharing
@@ -311,7 +429,9 @@ export async function markQuoteAsSent(quoteId: string): Promise<{ synced: boolea
 
   logAudit("quote.sent", "quote", quoteId, updatedQuote.customerName);
 
-  return { synced: result.success };
+  return result.success
+    ? { synced: true }
+    : { synced: false, syncError: result.error || "Cloud sync failed" };
 }
 
 // Duplicate a quote (for editing sent quotes)
@@ -369,6 +489,8 @@ export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; 
   if (!existing) {
     await removeFromSyncQueue(id);
     await removeFromDeleteQueue(id);
+    await clearRetryState(SYNC_FAILURES_KEY, id);
+    await clearRetryState(DELETE_FAILURES_KEY, id);
     return { cloudDeleted: true };
   }
 
@@ -379,6 +501,8 @@ export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; 
     await purgeLocalQuote(id);
     await removeFromSyncQueue(id);
     await removeFromDeleteQueue(id);
+    await clearRetryState(SYNC_FAILURES_KEY, id);
+    await clearRetryState(DELETE_FAILURES_KEY, id);
     logAudit("quote.deleted", "quote", id, existing.customerName);
     return { cloudDeleted: true };
   }
@@ -400,9 +524,11 @@ export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; 
     // Cloud confirmed — safe to physically remove.
     await purgeLocalQuote(id);
     await removeFromDeleteQueue(id);
+    await clearRetryState(DELETE_FAILURES_KEY, id);
   } else {
     console.warn("[deleteQuote] Cloud deletion failed, queued for retry:", deleteResult.error);
     await addToDeleteQueue(id);
+    await recordRetryFailure(DELETE_FAILURES_KEY, id);
   }
 
   return { cloudDeleted: deleteResult.success, error: deleteResult.error };

@@ -201,6 +201,25 @@ describe("quotes storage", () => {
       expect(queue).toContain("fail-q");
     });
 
+    it("returns syncError when cloud sync fails", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: false, error: "Network error" });
+
+      const result = await saveQuote(makeQuote({ id: "err-q" }));
+      expect(result.synced).toBe(false);
+      expect(result.syncError).toBe("Network error");
+    });
+
+    it("returns finalised slug when server resolves collision", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: true, slug: "server-slug" });
+
+      const result = await saveQuote(makeQuote({ id: "slug-q", slug: "client-slug" }));
+      expect(result.synced).toBe(true);
+      expect(result.slug).toBe("server-slug");
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].slug).toBe("server-slug");
+    });
+
     it("removes from sync queue on successful sync", async () => {
       // Pre-fill sync queue
       mockStore.set("ksq_sync_queue", ["q1"]);
@@ -419,6 +438,11 @@ describe("quotes storage", () => {
       // After failed delete: tombstone remains, queued for retry
       expect((mockStore.get("ksq_quotes") as Quote[])).toHaveLength(1);
 
+      // Simulate enough time passing so the retry isn't blocked by backoff.
+      mockStore.set("ksq_delete_failures", {
+        "retry-q": { attempts: 1, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
       const { syncPendingDeletions } = await import("../quotes");
       const result = await syncPendingDeletions();
 
@@ -466,6 +490,35 @@ describe("quotes storage", () => {
     it("returns synced: false when quote not found", async () => {
       const result = await markQuoteAsSent("nonexistent");
       expect(result.synced).toBe(false);
+      expect(result.error).toBe("Quote not found");
+    });
+
+    it("returns synced: true on successful cloud sync", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "send-q" })]);
+
+      const result = await markQuoteAsSent("send-q");
+      expect(result.synced).toBe(true);
+      expect(result.syncError).toBeUndefined();
+    });
+
+    it("returns syncError when cloud sync fails", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: false, error: "Timeout" });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "send-q" })]);
+
+      const result = await markQuoteAsSent("send-q");
+      expect(result.synced).toBe(false);
+      expect(result.syncError).toBe("Timeout");
+      expect(result.error).toBeUndefined();
+    });
+
+    it("adds to sync queue when cloud sync fails", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: false, error: "Offline" });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "send-q" })]);
+
+      await markQuoteAsSent("send-q");
+
+      const queue = mockStore.get("ksq_sync_queue") as string[];
+      expect(queue).toContain("send-q");
     });
   });
 
@@ -536,7 +589,7 @@ describe("quotes storage", () => {
   describe("syncPendingQuotes", () => {
     it("returns zeroes when queue is empty", async () => {
       const result = await syncPendingQuotes();
-      expect(result).toEqual({ synced: 0, failed: 0 });
+      expect(result).toEqual({ synced: 0, failed: 0, skipped: 0, gaveUp: 0 });
     });
 
     it("syncs queued quotes and removes from queue on success", async () => {
@@ -573,6 +626,104 @@ describe("quotes storage", () => {
       expect(result.failed).toBe(0);
       const queue = mockStore.get("ksq_sync_queue") as string[];
       expect(queue).not.toContain("gone-q");
+    });
+
+    it("skips IDs still in backoff window", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: false, error: "Offline" });
+
+      mockStore.set("ksq_quotes", [makeQuote({ id: "wait-q" })]);
+      mockStore.set("ksq_sync_queue", ["wait-q"]);
+      // Failed 1ms ago → still within the 10s base backoff.
+      mockStore.set("ksq_sync_failures", {
+        "wait-q": { attempts: 1, lastAttemptAt: new Date().toISOString() },
+      });
+
+      const result = await syncPendingQuotes();
+
+      expect(mockSyncQuoteToSupabase).not.toHaveBeenCalled();
+      expect(result.skipped).toBe(1);
+      expect(result.failed).toBe(0);
+    });
+
+    it("gives up after MAX_RETRY_ATTEMPTS and removes from queue", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "dead-q" })]);
+      mockStore.set("ksq_sync_queue", ["dead-q"]);
+      mockStore.set("ksq_sync_failures", {
+        "dead-q": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      const result = await syncPendingQuotes();
+
+      expect(mockSyncQuoteToSupabase).not.toHaveBeenCalled();
+      expect(result.gaveUp).toBe(1);
+      expect((mockStore.get("ksq_sync_queue") as string[])).not.toContain("dead-q");
+      const failures = mockStore.get("ksq_sync_failures") as Record<string, unknown>;
+      expect(failures["dead-q"]).toBeUndefined();
+    });
+
+    it("increments attempt counter on failure", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({ success: false, error: "Timeout" });
+
+      mockStore.set("ksq_quotes", [makeQuote({ id: "retry-q" })]);
+      mockStore.set("ksq_sync_queue", ["retry-q"]);
+      mockStore.set("ksq_sync_failures", {
+        "retry-q": { attempts: 2, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      await syncPendingQuotes();
+
+      const failures = mockStore.get("ksq_sync_failures") as Record<string, { attempts: number }>;
+      expect(failures["retry-q"].attempts).toBe(3);
+    });
+
+    it("clears failure counter on successful retry", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "recover-q" })]);
+      mockStore.set("ksq_sync_queue", ["recover-q"]);
+      mockStore.set("ksq_sync_failures", {
+        "recover-q": { attempts: 3, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      await syncPendingQuotes();
+
+      const failures = mockStore.get("ksq_sync_failures") as Record<string, unknown>;
+      expect(failures["recover-q"]).toBeUndefined();
+    });
+  });
+
+  describe("syncPendingDeletions retry/backoff", () => {
+    it("gives up after MAX_RETRY_ATTEMPTS — force-purges local tombstone", async () => {
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "dead-del-q", deletedAt: new Date().toISOString() }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["dead-del-q"]);
+      mockStore.set("ksq_delete_failures", {
+        "dead-del-q": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
+      expect(result.gaveUp).toBe(1);
+      expect((mockStore.get("ksq_quotes") as Quote[])).toHaveLength(0);
+      expect((mockStore.get("ksq_delete_queue") as string[])).not.toContain("dead-del-q");
+    });
+
+    it("skips delete IDs in backoff window", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({ success: false, error: "Offline" });
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "wait-del-q", deletedAt: new Date().toISOString() }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["wait-del-q"]);
+      mockStore.set("ksq_delete_failures", {
+        "wait-del-q": { attempts: 1, lastAttemptAt: new Date().toISOString() },
+      });
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
+      expect(result.skipped).toBe(1);
     });
   });
 

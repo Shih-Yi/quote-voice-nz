@@ -124,9 +124,17 @@ export default function QuoteEditorPage({ params }: PageProps) {
     if (!quote) return;
 
     try {
-      await markQuoteAsSent(quote.id);
+      const result = await markQuoteAsSent(quote.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       setQuote({ ...quote, status: "sent" });
-      toast.success("Quote marked as sent!");
+      if (!result.synced) {
+        toast.warning("Marked as sent locally, but cloud sync failed. Will retry automatically.");
+      } else {
+        toast.success("Quote marked as sent!");
+      }
     } catch (error) {
       console.error("Failed to update quote:", error);
       toast.error("Failed to update quote");

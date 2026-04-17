@@ -16,7 +16,7 @@ interface UseQuotesResult {
   error: Error | null;
   refresh: () => Promise<void>;
   getById: (id: string) => Promise<Quote | undefined>;
-  save: (quote: Quote) => Promise<void>;
+  save: (quote: Quote) => Promise<{ synced: boolean; syncError?: string; slug?: string }>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -55,8 +55,9 @@ export function useQuotes(limit?: number): UseQuotesResult {
 
   const save = useCallback(
     async (quote: Quote) => {
-      await saveQuote(quote);
+      const result = await saveQuote(quote);
       await refresh();
+      return result;
     },
     [refresh]
   );

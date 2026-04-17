@@ -103,11 +103,18 @@ describe("POST /api/quotes", () => {
   });
 
   it("inserts a new quote when it does not exist", async () => {
+    const { createHash } = await import("crypto");
+    const tokenHash = createHash("sha256").update("dt_test_token").digest("hex");
+
     const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
 
-    // upsert().select() chain: select must be the terminal promise
+    // upsert().select() chain: select must be the terminal promise.
+    // Returned row includes owner_token_hash so the post-upsert ownership check passes.
     const upsertChain = {
-      select: vi.fn().mockResolvedValue({ data: [{ id: "test-id-123" }], error: null }),
+      select: vi.fn().mockResolvedValue({
+        data: [{ id: "test-id-123", owner_token_hash: tokenHash }],
+        error: null,
+      }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
@@ -140,7 +147,10 @@ describe("POST /api/quotes", () => {
 
     // upsert().select() — select must be the terminal promise
     const upsertChain = {
-      select: vi.fn().mockResolvedValue({ data: [{ id: "test-id-123" }], error: null }),
+      select: vi.fn().mockResolvedValue({
+        data: [{ id: "test-id-123", owner_token_hash: tokenHash }],
+        error: null,
+      }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
@@ -160,6 +170,35 @@ describe("POST /api/quotes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+
+
+  it("returns 409 when post-upsert ownership hash differs (race)", async () => {
+    const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
+
+    // Simulate concurrent write: row we just upserted now has a different token hash
+    const upsertChain = {
+      select: vi.fn().mockResolvedValue({
+        data: [{ id: "test-id-123", owner_token_hash: "different-hash" }],
+        error: null,
+      }),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      upsert: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+    };
+
+    let callCount = 0;
+    mockFrom.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return selectChain;
+      return upsertChain;
+    });
+
+    const req = makeRequest("POST", validPayload());
+    const res = await POST(req);
+    expect(res.status).toBe(409);
   });
 
 
