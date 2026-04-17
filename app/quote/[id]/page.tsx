@@ -13,7 +13,7 @@ import { EditSentQuoteDialog } from "@/components/quote/EditSentQuoteDialog";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { Button } from "@/components/ui/button";
 import { QuoteVersionDiff } from "@/components/quote/QuoteVersionDiff";
-import { getQuoteById, getAllQuotes, updateQuote, deleteQuote, refreshQuoteFromCloud, markQuoteAsSent, duplicateQuote, unlockQuoteForEditing } from "@/lib/storage/quotes";
+import { getQuoteById, getAllQuotes, updateQuote, deleteQuote, refreshQuoteFromCloud, markQuoteAsSent, duplicateQuote } from "@/lib/storage/quotes";
 import { getVersionHistory } from "@/lib/utils/quoteVersions";
 import { updateUserProfile } from "@/lib/supabase/profile";
 import { useAuth } from "@/hooks/useAuth";
@@ -124,9 +124,17 @@ export default function QuoteEditorPage({ params }: PageProps) {
     if (!quote) return;
 
     try {
-      await markQuoteAsSent(quote.id);
+      const result = await markQuoteAsSent(quote.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       setQuote({ ...quote, status: "sent" });
-      toast.success("Quote marked as sent!");
+      if (!result.synced) {
+        toast.warning("Marked as sent locally, but cloud sync failed. Will retry automatically.");
+      } else {
+        toast.success("Quote marked as sent!");
+      }
     } catch (error) {
       console.error("Failed to update quote:", error);
       toast.error("Failed to update quote");
@@ -189,21 +197,6 @@ export default function QuoteEditorPage({ params }: PageProps) {
       toast.error("Failed to create new version");
     }
   }, [quote, router, versionLimitReached, limits.versions]);
-
-  // Edit original (unlock and edit in place)
-  const handleEditOriginal = useCallback(async () => {
-    if (!quote) return;
-
-    try {
-      await unlockQuoteForEditing(quote.id);
-      setQuote({ ...quote, status: "draft" });
-      setIsEditing(true);
-      toast.info("Quote unlocked for editing");
-    } catch (error) {
-      console.error("Failed to unlock quote:", error);
-      toast.error("Failed to unlock quote");
-    }
-  }, [quote]);
 
   if (isLoading) {
     return (
@@ -336,7 +329,6 @@ export default function QuoteEditorPage({ params }: PageProps) {
           onOpenChange={setShowEditSentDialog}
           currentVersion={quote.version || 1}
           onCreateNewVersion={handleCreateNewVersion}
-          onEditOriginal={handleEditOriginal}
           versionLimitReached={versionLimitReached}
         />
 
