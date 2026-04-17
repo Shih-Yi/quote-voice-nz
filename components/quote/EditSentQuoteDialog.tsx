@@ -14,7 +14,6 @@ interface EditSentQuoteDialogProps {
   onOpenChange: (open: boolean) => void;
   currentVersion: number;
   onCreateNewVersion: () => void;
-  onEditOriginal: () => void;
   versionLimitReached?: boolean;
 }
 
@@ -23,7 +22,6 @@ export function EditSentQuoteDialog({
   onOpenChange,
   currentVersion,
   onCreateNewVersion,
-  onEditOriginal,
   versionLimitReached = false,
 }: EditSentQuoteDialogProps) {
   const nextVersion = currentVersion + 1;
@@ -39,8 +37,8 @@ export function EditSentQuoteDialog({
             This quote was already sent
           </DialogTitle>
           <DialogDescription className="pt-2 text-text-muted">
-            Would you like to create a new version (V{nextVersion}) to keep your history,
-            or just update the original one?
+            Sent quotes are locked to protect your record of what the customer received.
+            Create a new version (V{nextVersion}) to make changes.
           </DialogDescription>
         </DialogHeader>
 
@@ -72,20 +70,15 @@ export function EditSentQuoteDialog({
 
           <Button
             variant="ghost"
-            onClick={() => {
-              onEditOriginal();
-              onOpenChange(false);
-            }}
+            onClick={() => onOpenChange(false)}
             className="w-full text-text-muted hover:text-text"
           >
-            Edit Original
+            Cancel
           </Button>
         </div>
 
         <p className="text-xs text-text-muted text-center mt-2">
-          {versionLimitReached
-            ? "You can still edit the original quote directly"
-            : "Creating a new version is recommended to maintain a clear history"}
+          Each version keeps a clear history of what was quoted and when.
         </p>
       </DialogContent>
     </Dialog>

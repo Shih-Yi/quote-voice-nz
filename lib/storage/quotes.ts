@@ -322,38 +322,6 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
   return newQuote;
 }
 
-// Unlock a sent quote for editing (changes status back to draft)
-// WARNING: This modifies the original - use with caution
-export async function unlockQuoteForEditing(quoteId: string): Promise<{ success: boolean }> {
-  const quotes = await getAllQuotes();
-  const index = quotes.findIndex((q) => q.id === quoteId);
-
-  if (index < 0) {
-    return { success: false };
-  }
-
-  const updatedQuote = {
-    ...quotes[index],
-    status: "draft" as const,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await set(QUOTES_KEY, quotes.map((q, i) => (i === index ? updatedQuote : q)));
-
-  // Sync to Supabase (upsert)
-  const deviceToken = await getDeviceToken();
-  const result = await syncQuoteToSupabase(updatedQuote, deviceToken);
-
-  if (result.success) {
-    await removeFromSyncQueue(quotes[index].id);
-  } else {
-    console.warn("[unlockQuoteForEditing] Cloud sync failed (local save succeeded):", result.error);
-    await addToSyncQueue(quotes[index].id);
-  }
-
-  return { success: true };
-}
-
 // Delete quote - local and Supabase
 export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; error?: string }> {
   // Delete locally

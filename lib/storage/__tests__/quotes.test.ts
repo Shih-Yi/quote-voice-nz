@@ -47,7 +47,6 @@ const {
   getRecentQuotes,
   markQuoteAsSent,
   duplicateQuote,
-  unlockQuoteForEditing,
   getSyncQueue,
   syncPendingQuotes,
   generateSlug,
@@ -422,33 +421,6 @@ describe("quotes storage", () => {
 
       const v3 = await duplicateQuote("v2");
       expect(v3!.parentId).toBe("root"); // Points to root, not v2
-    });
-  });
-
-  // ─── UNLOCK FOR EDITING ───────────────────────────────
-
-  describe("unlockQuoteForEditing", () => {
-    it("changes status back to draft", async () => {
-      mockStore.set("ksq_quotes", [makeQuote({ id: "locked-q", status: "sent" })]);
-
-      const result = await unlockQuoteForEditing("locked-q");
-
-      expect(result.success).toBe(true);
-      const stored = mockStore.get("ksq_quotes") as Quote[];
-      expect(stored[0].status).toBe("draft");
-    });
-
-    it("syncs to Supabase", async () => {
-      mockStore.set("ksq_quotes", [makeQuote({ id: "locked-q", status: "sent" })]);
-
-      await unlockQuoteForEditing("locked-q");
-
-      expect(mockSyncQuoteToSupabase).toHaveBeenCalledOnce();
-    });
-
-    it("returns success: false for nonexistent quote", async () => {
-      const result = await unlockQuoteForEditing("missing");
-      expect(result.success).toBe(false);
     });
   });
 
