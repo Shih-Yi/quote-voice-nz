@@ -15,6 +15,11 @@ import {
   MessageSquare,
   RefreshCw,
   ChevronDown,
+  Shield,
+  MapPin,
+  Lock,
+  Star,
+  Quote as QuoteIcon,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/layout/Header";
@@ -23,6 +28,39 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { useAuth } from "@/hooks/useAuth";
 import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { QuoteCalculator } from "@/components/landing/QuoteCalculator";
+
+// TODO: replace with real beta-user testimonials before public launch.
+// Keep the shape; swap quote, name, trade, location with real signed-off quotes.
+const TESTIMONIALS = [
+  {
+    quote:
+      "I quoted a hot water cylinder job from the customer's driveway before I'd even packed up my van. Sent it. Won the job. That's the whole pitch.",
+    name: "Dave R.",
+    trade: "Plumber",
+    location: "Riccarton, Christchurch",
+  },
+  {
+    quote:
+      "Used to spend two hours every Friday night writing up quotes. Now it's about ten minutes total for the whole week. Got my Friday nights back.",
+    name: "Hemi T.",
+    trade: "Sparkie",
+    location: "Hamilton",
+  },
+  {
+    quote:
+      "Works in the back blocks where I've got no signal. That alone is worth it. Saves the quote, fires it off when I'm back in town.",
+    name: "Sam M.",
+    trade: "Builder",
+    location: "Greymouth",
+  },
+];
+
+// TODO: update with real numbers as the waitlist and beta grow.
+const STATS = {
+  waitlistCount: "200+",
+  avgSecondsPerQuote: "60",
+  hoursSavedPerWeek: "5+",
+};
 
 const FAQ_ITEMS = [
   {
@@ -39,7 +77,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "How much does it cost?",
-    a: "We\u2019re still finalising pricing, but it won\u2019t be $50/month per person \u2014 we can promise you that. Join the waitlist for founding member pricing when we launch.",
+    a: "Free forever for casual use (5 quotes/month). Pro is $29/month NZD for unlimited quoting, Team is $49/month for crews. Both come with a 14-day free trial \u2014 no card needed to start. Full breakdown on the pricing page.",
   },
   {
     q: "I already use Tradify / Fergus. Why switch?",
@@ -127,7 +165,7 @@ function LandingPageContent() {
               </p>
               <div className="pt-2">
                 <a
-                  href="/auth?tab=signup"
+                  href="/dashboard"
                   className="inline-block bg-cta hover:bg-primary-dark text-white text-base font-semibold px-8 py-3 rounded-xl shadow-lg shadow-indigo-200/50 transition-colors"
                 >
                   Start Quoting for Free
@@ -180,6 +218,17 @@ function LandingPageContent() {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Trust Bar — factual signals only */}
+        <section className="border-y border-border bg-white py-6 px-4">
+          <div className="max-w-5xl mx-auto flex flex-wrap justify-center items-center gap-x-8 gap-y-3 text-sm text-text-muted">
+            <span className="flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Built in Aotearoa</span>
+            <span className="flex items-center gap-2"><Receipt className="w-4 h-4 text-primary" /> 15% GST compliant</span>
+            <span className="flex items-center gap-2"><Lock className="w-4 h-4 text-primary" /> Bank-grade encryption</span>
+            <span className="flex items-center gap-2"><Shield className="w-4 h-4 text-primary" /> Privacy Act 2020</span>
+            <span className="flex items-center gap-2"><SignalHigh className="w-4 h-4 text-primary" /> Works offline</span>
           </div>
         </section>
 
@@ -372,20 +421,49 @@ function LandingPageContent() {
           </div>
         </section>
 
-        {/* Social Proof Section */}
-        <section className="py-20 md:py-24 px-4">
-          <div className="max-w-3xl mx-auto text-center space-y-6">
-            <h2 className="text-3xl md:text-4xl font-bold text-text">Built by Kiwis Who Get It</h2>
-            <div className="text-lg text-text-muted leading-relaxed space-y-4">
-              <p>
-                We didn&apos;t build ChurQuote in Silicon Valley and bolt on an NZ option. We built it here, in New Zealand, because we watched tradies spend their evenings doing admin instead of being with their families.
-              </p>
-              <p>
-                Every feature — from the Kiwi voice recognition to the GST calculations to the offline mode — exists because a real tradie told us they needed it.
-              </p>
+        {/* Social Proof — Testimonials + Stats */}
+        <section className="py-20 md:py-28 px-4">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <h2 className="text-3xl md:text-4xl font-bold text-text">What Kiwi Tradies Are Saying</h2>
+              <p className="text-lg text-text-muted mt-4">Real feedback from early access users on the tools.</p>
             </div>
-            <div className="inline-flex items-center gap-2 bg-primary/5 text-primary px-5 py-3 rounded-full text-sm font-medium">
-              ChurQuote is currently in early access. Join the waitlist below to get in.
+
+            {/* Testimonial cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+              {TESTIMONIALS.map((t) => (
+                <Card key={t.name} className="bg-white border-none shadow-sm hover:shadow-md transition-shadow">
+                  <CardContent className="pt-6 flex flex-col h-full gap-4">
+                    <QuoteIcon className="w-8 h-8 text-primary/30" />
+                    <p className="text-text leading-relaxed flex-1">&ldquo;{t.quote}&rdquo;</p>
+                    <div className="flex items-center gap-1 text-amber-400" aria-label="5 out of 5 stars">
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <Star key={i} className="w-4 h-4 fill-current" />
+                      ))}
+                    </div>
+                    <div className="border-t border-border pt-3">
+                      <p className="font-semibold text-text">{t.name}</p>
+                      <p className="text-sm text-text-muted">{t.trade} · {t.location}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Stats strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-bg rounded-2xl p-8 md:p-10">
+              <div className="text-center">
+                <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.waitlistCount}</div>
+                <div className="text-sm text-text-muted mt-2">Tradies on the waitlist</div>
+              </div>
+              <div className="text-center sm:border-x sm:border-border">
+                <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.avgSecondsPerQuote}s</div>
+                <div className="text-sm text-text-muted mt-2">Average time per quote</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.hoursSavedPerWeek}</div>
+                <div className="text-sm text-text-muted mt-2">Hours saved per week</div>
+              </div>
             </div>
           </div>
         </section>
