@@ -288,9 +288,23 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
 export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
   const quotes = await getAllQuotes();
   const local = quotes.find((q) => q.slug === slug);
-  if (local) return local;
 
-  const cloudQuote = await getQuoteBySlugFromSupabase(slug);
+  // Fetch cloud copy to enrich metadata that isn't persisted locally
+  // (showWatermark — derived from creator's subscription tier — and ownerProfile).
+  // Falls back to local-only when offline.
+  const cloudQuote = await getQuoteBySlugFromSupabase(slug).catch(() => null);
+
+  if (local) {
+    if (cloudQuote) {
+      return {
+        ...local,
+        showWatermark: cloudQuote.showWatermark,
+        ownerProfile: cloudQuote.ownerProfile,
+      };
+    }
+    return local;
+  }
+
   return cloudQuote ?? undefined;
 }
 

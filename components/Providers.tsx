@@ -6,11 +6,19 @@ import { initSentry } from "@/lib/sentry";
 
 function useServiceWorker() {
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // SW registration failed — app still works without it
-      });
+    if (!("serviceWorker" in navigator)) return;
+
+    if (process.env.NODE_ENV !== "production") {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((reg) => reg.unregister());
+      }).catch(() => {});
+      caches?.keys?.().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+      return;
     }
+
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // SW registration failed — app still works without it
+    });
   }, []);
 }
 

@@ -9,7 +9,7 @@ import { QuoteItem } from "@/components/quote/QuoteItem";
 import { QuotePDF } from "@/components/quote/QuotePDF";
 import { RegisterPrompt } from "@/components/auth/RegisterPrompt";
 import { AuthModal } from "@/components/auth/AuthModal";
-import { getQuoteBySlug } from "@/lib/storage/quotes";
+import { getQuoteBySlug, getAllQuotes } from "@/lib/storage/quotes";
 import { formatNZD } from "@/lib/utils/currency";
 import { formatNZDate } from "@/lib/utils/date";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,8 +24,13 @@ export default function PublicQuotePage({ params }: PageProps) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isLocalCreator, setIsLocalCreator] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { user, signUp, signIn, signInGoogle } = useAuth();
+  const isOwner = !!user && !!quote?.userId && user.id === quote.userId;
+  // Anonymous tradie viewing their own quote on the device that created it —
+  // IndexedDB presence is our "this is the creator's device" signal.
+  const showRegisterPrompt = !user && isLocalCreator;
 
   const handleAcceptQuote = useCallback(async () => {
     if (!quote?.slug) return;
@@ -54,6 +59,11 @@ export default function PublicQuotePage({ params }: PageProps) {
       try {
         const data = await getQuoteBySlug(resolvedParams.slug);
         setQuote(data || null);
+
+        // Check local IndexedDB directly to detect if this browser is the creator's device.
+        // getQuoteBySlug falls back to cloud, so we can't rely on its return value.
+        const localQuotes = await getAllQuotes();
+        setIsLocalCreator(localQuotes.some((q) => q.slug === resolvedParams.slug));
       } catch (error) {
         console.error("Failed to load quote:", error);
       } finally {
@@ -108,19 +118,10 @@ export default function PublicQuotePage({ params }: PageProps) {
           <QuotePDF quote={quote} showWatermark={quote.showWatermark} />
         </div>
 
-        {/* Registration Prompt - Show only for non-logged-in users */}
-        {!user && (
+        {/* Register CTA — only shown to the anonymous creator on their own device */}
+        {showRegisterPrompt && (
           <RegisterPrompt onRegisterClick={() => setShowAuthModal(true)} />
         )}
-
-        {/* Auth Modal */}
-        <AuthModal
-          open={showAuthModal}
-          onOpenChange={setShowAuthModal}
-          onSignUp={signUp}
-          onSignIn={signIn}
-          onSignInGoogle={signInGoogle}
-        />
 
         {/* Quote Content */}
         <div id="quote-preview" className="space-y-4">
@@ -271,17 +272,32 @@ export default function PublicQuotePage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Watermark banner — free tier only, always at the very bottom */}
+          {/* Watermark banner — free tier only, always at the very bottom.
+              Brand line shows to everyone; Upgrade CTA is owner-only. */}
           {quote.showWatermark && (
             <div className="bg-primary text-white text-center py-2 px-4 text-xs">
-              <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies &mdash; </span>
-              <a href="/pricing" className="underline font-semibold hover:text-white/80">
-                Remove watermark &rarr; Upgrade to Pro
-              </a>
+              <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies</span>
+              {isOwner && (
+                <>
+                  <span> &mdash; </span>
+                  <a href="/pricing" className="underline font-semibold hover:text-white/80">
+                    Remove watermark &rarr; Upgrade to Pro
+                  </a>
+                </>
+              )}
             </div>
           )}
         </div>
       )}
+
+      <AuthModal
+        open={showAuthModal}
+        onOpenChange={setShowAuthModal}
+        defaultTab="register"
+        onSignUp={signUp}
+        onSignIn={signIn}
+        onSignInGoogle={signInGoogle}
+      />
     </div>
   );
 }
