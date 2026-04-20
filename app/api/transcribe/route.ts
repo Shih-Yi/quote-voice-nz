@@ -7,7 +7,7 @@ import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 10 transcriptions per minute per IP
-  const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 10, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   try {

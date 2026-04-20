@@ -10,7 +10,7 @@ function hashToken(token: string): string {
 
 // Bind anonymous device quotes to a logged-in user
 export async function POST(request: NextRequest) {
-  const rateLimited = rateLimit(request, { limit: 5, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 5, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   const user = await getCurrentUserServer();

@@ -58,7 +58,7 @@ interface QuotePayload {
 }
 
 export async function POST(request: NextRequest) {
-  const rateLimited = rateLimit(request, { limit: 30, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 30, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   const supabase = getServerSupabase();
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 10, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   const supabase = getServerSupabase();

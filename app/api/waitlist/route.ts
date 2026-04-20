@@ -3,7 +3,7 @@ import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 3 signups per minute per IP
-  const rateLimited = rateLimit(request, { limit: 3, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 3, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   let body: { email?: string; trade?: string };

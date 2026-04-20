@@ -46,7 +46,7 @@ If no price is mentioned for an item, estimate based on common NZ trade rates or
 
 export async function POST(request: NextRequest) {
   // Rate limit: 15 extractions per minute per IP
-  const rateLimited = rateLimit(request, { limit: 15, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 15, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   try {

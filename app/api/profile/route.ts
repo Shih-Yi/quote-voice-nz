@@ -4,7 +4,7 @@ import { getServerSupabase } from "@/lib/supabase/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 
 export async function GET(request: NextRequest) {
-  const rateLimited = rateLimit(request, { limit: 20, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 20, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   const user = await getCurrentUserServer();
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, business_name, phone, email, address, bank_account")
+    .select("id, full_name, avatar_url, business_name, phone, email, address, bank_account")
     .eq("id", user.id)
     .single();
 
@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     profile: {
       id: data.id,
+      fullName: data.full_name,
+      avatarUrl: data.avatar_url,
       businessName: data.business_name,
       phone: data.phone,
       email: data.email,
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const rateLimited = rateLimit(request, { limit: 10, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 10, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   const user = await getCurrentUserServer();
@@ -70,6 +72,7 @@ export async function PUT(request: NextRequest) {
 
     const updateData = {
       id: user.id,
+      full_name: body.fullName ?? null,
       business_name: body.businessName ?? null,
       phone: body.phone ?? null,
       email: body.email ?? null,

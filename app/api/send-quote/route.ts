@@ -6,7 +6,7 @@ import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 
 export async function POST(request: NextRequest) {
   // Rate limit: 5 emails per minute per IP
-  const rateLimited = rateLimit(request, { limit: 5, windowSeconds: 60 });
+  const rateLimited = await rateLimit(request, { limit: 5, windowSeconds: 60 });
   if (rateLimited) return rateLimited;
 
   // Auth required for email sending

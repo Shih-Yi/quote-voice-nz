@@ -1,25 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-// In-memory store (resets on cold start — acceptable for serverless)
-const store = new Map<string, RateLimitEntry>();
-
-// Clean up stale entries periodically
-let lastCleanup = Date.now();
-function cleanup() {
-  const now = Date.now();
-  if (now - lastCleanup < 60_000) return; // Clean every 60s at most
-  lastCleanup = now;
-  for (const [key, entry] of store) {
-    if (entry.resetAt <= now) {
-      store.delete(key);
-    }
-  }
-}
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 
 interface RateLimitOptions {
   /** Max requests allowed in the window */
@@ -28,49 +9,186 @@ interface RateLimitOptions {
   windowSeconds: number;
 }
 
-/**
- * Simple in-memory rate limiter.
- * Returns null if allowed, or a NextResponse (429) if rate limited.
- */
-export function rateLimit(
-  request: NextRequest,
-  options: RateLimitOptions
-): NextResponse | null {
-  cleanup();
+// ---------------------------------------------------------------------------
+// In-memory fallback (cold-start and per-instance only — used when Upstash
+// env vars are missing, typically during local dev).
+// ---------------------------------------------------------------------------
 
-  const { limit, windowSeconds } = options;
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const memoryStore = new Map<string, RateLimitEntry>();
+let lastCleanup = Date.now();
+
+function cleanupMemory() {
   const now = Date.now();
+  if (now - lastCleanup < 60_000) return;
+  lastCleanup = now;
+  for (const [key, entry] of memoryStore) {
+    if (entry.resetAt <= now) {
+      memoryStore.delete(key);
+    }
+  }
+}
 
-  // Use IP + pathname as key
-  const ip =
-    request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers?.get?.("x-real-ip") ||
-    "unknown";
-  const pathname = request.nextUrl?.pathname || "unknown";
-  const key = `${ip}:${pathname}`;
-
-  const entry = store.get(key);
+function checkMemory(
+  key: string,
+  limit: number,
+  windowSeconds: number
+): { allowed: boolean; retryAfter: number } {
+  cleanupMemory();
+  const now = Date.now();
+  const entry = memoryStore.get(key);
 
   if (!entry || entry.resetAt <= now) {
-    // New window
-    store.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });
-    return null;
+    memoryStore.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });
+    return { allowed: true, retryAfter: 0 };
   }
 
   entry.count++;
-
   if (entry.count > limit) {
-    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
-    return NextResponse.json(
-      { error: "Too many requests. Please try again shortly." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(retryAfter),
-        },
-      }
-    );
+    return {
+      allowed: false,
+      retryAfter: Math.ceil((entry.resetAt - now) / 1000),
+    };
+  }
+  return { allowed: true, retryAfter: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Upstash Redis-backed limiter (shared across all Lambda instances).
+// Cached per-window so each distinct window reuses a single Ratelimit client.
+// ---------------------------------------------------------------------------
+
+const upstashLimiters = new Map<string, Ratelimit>();
+
+function getUpstashClient(): Redis | null {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return new Redis({ url, token });
+}
+
+function getUpstashLimiter(
+  limit: number,
+  windowSeconds: number
+): Ratelimit | null {
+  const key = `${limit}:${windowSeconds}`;
+  const cached = upstashLimiters.get(key);
+  if (cached) return cached;
+
+  const redis = getUpstashClient();
+  if (!redis) return null;
+
+  const limiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(limit, `${windowSeconds} s`),
+    analytics: false,
+    prefix: "ksq:rl",
+  });
+  upstashLimiters.set(key, limiter);
+  return limiter;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers?.get?.("x-real-ip") ||
+    "unknown"
+  );
+}
+
+/**
+ * Rate-limit a request. Uses Upstash Redis when configured, otherwise falls
+ * back to an in-memory map (fine for local dev but not reliable in
+ * multi-instance production).
+ *
+ * Returns null when allowed, or a 429 NextResponse when the limit is hit.
+ */
+export async function rateLimit(
+  request: NextRequest,
+  options: RateLimitOptions
+): Promise<NextResponse | null> {
+  const { limit, windowSeconds } = options;
+  const ip = getClientIp(request);
+  const pathname = request.nextUrl?.pathname || "unknown";
+  const key = `${ip}:${pathname}`;
+
+  const limiter = getUpstashLimiter(limit, windowSeconds);
+
+  let allowed: boolean;
+  let retryAfter: number;
+
+  if (limiter) {
+    const result = await limiter.limit(key);
+    allowed = result.success;
+    retryAfter = Math.max(0, Math.ceil((result.reset - Date.now()) / 1000));
+  } else {
+    const result = checkMemory(key, limit, windowSeconds);
+    allowed = result.allowed;
+    retryAfter = result.retryAfter;
   }
 
-  return null;
+  if (allowed) return null;
+
+  return NextResponse.json(
+    { error: "Too many requests. Please try again shortly." },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(retryAfter),
+      },
+    }
+  );
 }
+
+/**
+ * Coarse global per-IP limit for middleware. Checks an aggregate key that is
+ * independent of the route — protects overall API surface from floods.
+ */
+export async function globalIpRateLimit(
+  request: NextRequest,
+  options: RateLimitOptions
+): Promise<NextResponse | null> {
+  const { limit, windowSeconds } = options;
+  const ip = getClientIp(request);
+  const key = `global:${ip}`;
+
+  const limiter = getUpstashLimiter(limit, windowSeconds);
+
+  let allowed: boolean;
+  let retryAfter: number;
+
+  if (limiter) {
+    const result = await limiter.limit(key);
+    allowed = result.success;
+    retryAfter = Math.max(0, Math.ceil((result.reset - Date.now()) / 1000));
+  } else {
+    const result = checkMemory(key, limit, windowSeconds);
+    allowed = result.allowed;
+    retryAfter = result.retryAfter;
+  }
+
+  if (allowed) return null;
+
+  return NextResponse.json(
+    { error: "Too many requests. Please try again shortly." },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(retryAfter),
+      },
+    }
+  );
+}
+
+export const __testing = {
+  clearMemory: () => memoryStore.clear(),
+  clearUpstashCache: () => upstashLimiters.clear(),
+};
