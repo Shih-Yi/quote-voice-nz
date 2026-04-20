@@ -90,6 +90,105 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
+// Sign in with Magic Link (passwordless)
+export async function signInWithMagicLink(
+  email: string
+): Promise<{ error: string | null }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { error: "Supabase not configured" };
+  }
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      shouldCreateUser: true,
+    },
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+// Change password for an authenticated user (verifies current password first)
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ error: string | null }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { error: "Supabase not configured" };
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.email) {
+    return { error: "You must be signed in with an email account" };
+  }
+
+  // Re-authenticate to verify current password
+  const { error: verifyError } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: currentPassword,
+  });
+
+  if (verifyError) {
+    return { error: "Current password is incorrect" };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+// Send password reset email
+export async function sendPasswordResetEmail(
+  email: string
+): Promise<{ error: string | null }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { error: "Supabase not configured" };
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+// Update password (for authenticated user, typically after reset link)
+export async function updatePassword(
+  newPassword: string
+): Promise<{ error: string | null }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { error: "Supabase not configured" };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
 // Sign out
 export async function signOut(): Promise<{ error: string | null }> {
   const supabase = getSupabase();

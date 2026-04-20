@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { useI18n } from "@/hooks/useI18n";
 import { getUserProfile, updateUserProfile } from "@/lib/supabase/profile";
 import { UserProfile } from "@/types/quote";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,10 +14,10 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import Link from "next/link";
 import { Header } from "@/components/layout/Header";
+import { ChangePasswordCard } from "@/components/auth/ChangePasswordCard";
 
 export default function SettingsPage() {
   const { user, loading: authLoading } = useAuth();
-  const { locale, changeLocale, locales } = useI18n();
   const router = useRouter();
 
   const [profile, setProfile] = useState<Partial<UserProfile>>({});
@@ -99,6 +98,16 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="fullName">Name</Label>
+                <Input
+                  id="fullName"
+                  value={profile.fullName || ""}
+                  onChange={(e) => handleChange("fullName", e.target.value)}
+                  placeholder="e.g. Mike Smith"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="businessName">Business Name</Label>
                 <Input
                   id="businessName"
@@ -168,34 +177,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Language / Te Reo</CardTitle>
-              <CardDescription>
-                Choose your preferred language for the interface.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                {locales.map((l) => (
-                  <Button
-                    key={l.code}
-                    variant={locale === l.code ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => changeLocale(l.code)}
-                    className={locale === l.code ? "bg-primary" : ""}
-                  >
-                    {l.label}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-text-muted mt-2">
-                {locale === "mi-NZ"
-                  ? "Ka hurihia te reo o te atanga kaiwhakamahi"
-                  : "Changes the language of the user interface"}
-              </p>
-            </CardContent>
-          </Card>
+          <ChangePasswordCard />
 
           <div className="sticky bottom-4 z-10">
             <Button

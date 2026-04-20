@@ -655,7 +655,9 @@ CREATE TRIGGER quotes_updated_at
 -- ============================================
 CREATE TABLE IF NOT EXISTS api.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  business_name TEXT,
+  full_name TEXT,     -- From OAuth provider (e.g., Google)
+  avatar_url TEXT,    -- From OAuth provider
+  business_name TEXT, -- User-editable trading name
   phone TEXT,
   email TEXT,
   address TEXT,
@@ -687,6 +689,8 @@ CREATE POLICY "profiles_update_own"
 CREATE OR REPLACE VIEW api.profiles_public AS
 SELECT
   id,
+  full_name,
+  avatar_url,
   business_name,
   phone,
   email,

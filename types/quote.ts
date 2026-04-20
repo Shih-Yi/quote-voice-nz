@@ -8,6 +8,8 @@ export interface LineItem {
 
 export interface UserProfile {
   id?: string;
+  fullName?: string;
+  avatarUrl?: string;
   businessName?: string;
   phone?: string;
   email?: string;

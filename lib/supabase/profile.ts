@@ -20,6 +20,7 @@ export async function updateUserProfile(_userId: string, profile: Partial<UserPr
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        fullName: profile.fullName,
         businessName: profile.businessName,
         phone: profile.phone,
         email: profile.email,
