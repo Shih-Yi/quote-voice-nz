@@ -62,7 +62,7 @@ describe("changePassword", () => {
   it("returns an error when no authenticated user is found", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
 
-    const result = await changePassword("old-pass", "new-pass-123!");
+    const result = await changePassword("MOCK_OLD_PASSWORD", "MOCK_NEW_PASSWORD");
 
     expect(result.error).toMatch(/signed in with an email/i);
     expect(mockSignInWithPassword).not.toHaveBeenCalled();
@@ -77,11 +77,11 @@ describe("changePassword", () => {
       error: { message: "Invalid login credentials" },
     });
 
-    const result = await changePassword("wrong-pass", "new-pass-123!");
+    const result = await changePassword("MOCK_WRONG_PASSWORD", "MOCK_NEW_PASSWORD");
 
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
       email: "user@example.com",
-      password: "wrong-pass",
+      password: "MOCK_WRONG_PASSWORD",
     });
     expect(result).toEqual({ error: "Current password is incorrect" });
     expect(mockUpdateUser).not.toHaveBeenCalled();
@@ -94,9 +94,9 @@ describe("changePassword", () => {
     mockSignInWithPassword.mockResolvedValue({ error: null });
     mockUpdateUser.mockResolvedValue({ error: null });
 
-    const result = await changePassword("old-pass", "new-pass-123!");
+    const result = await changePassword("MOCK_OLD_PASSWORD", "MOCK_NEW_PASSWORD");
 
-    expect(mockUpdateUser).toHaveBeenCalledWith({ password: "new-pass-123!" });
+    expect(mockUpdateUser).toHaveBeenCalledWith({ password: "MOCK_NEW_PASSWORD" });
     expect(result).toEqual({ error: null });
   });
 
@@ -109,7 +109,7 @@ describe("changePassword", () => {
       error: { message: "Password too weak" },
     });
 
-    const result = await changePassword("old-pass", "new");
+    const result = await changePassword("MOCK_OLD_PASSWORD", "too-short");
     expect(result).toEqual({ error: "Password too weak" });
   });
 });
