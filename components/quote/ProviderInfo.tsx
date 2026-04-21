@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 import { getStoredProviderDetails, saveProviderDetailsToStorage } from "@/lib/storage/provider";
-import { getUserProfile } from "@/lib/supabase/profile";
 import { ChevronDown, ChevronUp, Store, Phone, Mail } from "lucide-react";
 
 interface ProviderInfoProps {
@@ -22,9 +22,10 @@ interface ProviderInfoProps {
 
 export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onShowAuthModal, readOnly = false }: ProviderInfoProps) {
   const { user, loading: authLoading } = useAuth();
+  const { profile: cachedProfile, isLoading: profileLoading } = useProfile();
   const [isExpanded, setIsExpanded] = useState(false);
   const [updateDefault, setUpdateDefault] = useState(false);
-  
+
   // Local state for editing fields
   const [localDetails, setLocalDetails] = useState<UserProfile>(providerDetails || {});
 
@@ -34,46 +35,47 @@ export function ProviderInfo({ providerDetails, onChange, onUpdateProfile, onSho
     onUpdateProfile?.(checked);
   };
 
-  // Initialize: Load defaults if empty
+  // Initialize: Load defaults if empty. Reads from SWR cache (useProfile)
+  // instead of firing its own /api/profile request.
   useEffect(() => {
     const hasDetails = providerDetails && (providerDetails.businessName || providerDetails.phone);
     if (hasDetails) {
-        setLocalDetails(providerDetails);
-        return;
+      setLocalDetails(providerDetails);
+      return;
     }
 
-    const loadDefaults = async () => {
-      let defaults: Partial<UserProfile> = {};
+    // Wait until auth + profile have resolved before deciding defaults.
+    if (authLoading) return;
+    if (user && profileLoading) return;
 
-      if (user) {
-        // Logged in: Fetch profile via server API
-        const profile = await getUserProfile(user.id);
-        if (profile) {
-          defaults = {
-            businessName: profile.businessName,
-            phone: profile.phone,
-            email: profile.email,
-            address: profile.address,
-            bankAccount: profile.bankAccount,
-          };
-        }
-      } else {
-        // Anon: Load from local storage
-        defaults = getStoredProviderDetails();
-      }
+    let defaults: Partial<UserProfile> = {};
+    if (user && cachedProfile) {
+      defaults = {
+        businessName: cachedProfile.businessName,
+        phone: cachedProfile.phone,
+        email: cachedProfile.email,
+        address: cachedProfile.address,
+        bankAccount: cachedProfile.bankAccount,
+      };
+    } else if (!user) {
+      defaults = getStoredProviderDetails();
+    }
 
-      if (Object.keys(defaults).length > 0) {
-        const newDetails = { ...localDetails, ...defaults };
-        setLocalDetails(newDetails);
-        onChange(newDetails); // Push up to QuoteForm
-      } else {
-        // No defaults found, probably first time -> expand form
-        setIsExpanded(true);
-      }
-    };
+    // Strip undefined/null so spread doesn't clobber existing fields.
+    const cleaned: Partial<UserProfile> = Object.fromEntries(
+      Object.entries(defaults).filter(([, v]) => v !== undefined && v !== null && v !== "")
+    );
 
-    loadDefaults();
-  }, [user]); // Run on mount or auth change
+    if (Object.keys(cleaned).length > 0) {
+      const newDetails = { ...localDetails, ...cleaned };
+      setLocalDetails(newDetails);
+      onChange(newDetails); // Push up to QuoteForm
+    } else {
+      // No defaults found, probably first time -> expand form
+      setIsExpanded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, authLoading, profileLoading, cachedProfile]);
 
   // Handle Input Change
   const handleChange = (field: keyof UserProfile, value: string) => {

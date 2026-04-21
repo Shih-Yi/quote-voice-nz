@@ -16,6 +16,7 @@ import { QuoteVersionDiff } from "@/components/quote/QuoteVersionDiff";
 import { getQuoteById, getAllQuotes, updateQuote, deleteQuote, refreshQuoteFromCloud, markQuoteAsSent, duplicateQuote } from "@/lib/storage/quotes";
 import { getVersionHistory } from "@/lib/utils/quoteVersions";
 import { updateUserProfile } from "@/lib/supabase/profile";
+import { mutate as swrMutate } from "swr";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
 import type { Quote } from "@/types/quote";
@@ -98,6 +99,8 @@ export default function QuoteEditorPage({ params }: PageProps) {
         const profileResult = await updateUserProfile(user.id, updatedQuote.providerDetails);
         if (profileResult.success) {
             toast.success("Default profile settings updated!");
+            // Invalidate useProfile SWR cache so other consumers see the new values.
+            swrMutate("/api/profile");
         } else {
             console.error("Failed to update profile", profileResult.error);
         }

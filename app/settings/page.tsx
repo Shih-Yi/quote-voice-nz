@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { getUserProfile, updateUserProfile } from "@/lib/supabase/profile";
+import { useProfile } from "@/hooks/useProfile";
+import { updateUserProfile } from "@/lib/supabase/profile";
 import { UserProfile } from "@/types/quote";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,31 +19,25 @@ import { ChangePasswordCard } from "@/components/auth/ChangePasswordCard";
 
 export default function SettingsPage() {
   const { user, loading: authLoading } = useAuth();
+  const { profile: cachedProfile, isLoading: profileLoading, refresh: refreshProfile } = useProfile();
   const router = useRouter();
 
   const [profile, setProfile] = useState<Partial<UserProfile>>({});
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Redirect anonymous users once auth resolves.
   useEffect(() => {
     if (authLoading) return;
-
-    if (!user) {
-      router.push("/");
-      return;
-    }
-
-    const loadProfile = async () => {
-      setIsLoading(true);
-      const data = await getUserProfile(user.id);
-      if (data) {
-        setProfile(data);
-      }
-      setIsLoading(false);
-    };
-
-    loadProfile();
+    if (!user) router.push("/");
   }, [user, authLoading, router]);
+
+  // Hydrate editable state from the SWR-cached profile.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (cachedProfile) setProfile(cachedProfile);
+  }, [cachedProfile]);
+
+  const isLoading = authLoading || (!!user && profileLoading);
 
   const handleChange = (field: keyof UserProfile, value: string) => {
     setProfile(prev => ({ ...prev, [field]: value }));
@@ -50,19 +45,20 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     if (!user) return;
-    
+
     setIsSaving(true);
     const { success, error } = await updateUserProfile(user.id, profile);
     setIsSaving(false);
 
     if (success) {
       toast.success("Settings saved successfully");
+      refreshProfile();
     } else {
       toast.error(error || "Failed to save settings");
     }
   };
 
-  if (authLoading || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
