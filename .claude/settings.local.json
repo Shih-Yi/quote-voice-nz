@@ -28,7 +28,9 @@
       "Bash(cp /Users/sychien/.claude/skills/gtm-pipeline/SKILL.md \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/.claude/skills/gtm-pipeline/SKILL.md\")",
       "Bash(cp /Users/sychien/.claude/skills/orchestrator/SKILL.md \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/.claude/skills/orchestrator/SKILL.md\")",
       "Bash(mkdir -p \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/templates/plumbing-quote-nz\")",
-      "Bash(mkdir -p \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/compare/tradify-alternative\")"
+      "Bash(mkdir -p \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/compare/tradify-alternative\")",
+      "Read(//Users/sychien/.claude/skills/**)",
+      "Read(//Users/sychien/.claude/skills/graphify/**)"
     ]
   }
 }
