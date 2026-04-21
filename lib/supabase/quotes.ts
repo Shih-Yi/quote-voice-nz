@@ -23,6 +23,13 @@ interface SupabaseQuoteRow {
   version: number;             // Version number
   created_at: string;
   updated_at: string;
+  // Joined owner profile fields (only present on get_quote_by_slug RPC rows)
+  owner_business_name?: string | null;
+  owner_phone?: string | null;
+  owner_email?: string | null;
+  owner_address?: string | null;
+  owner_bank_account?: string | null;
+  owner_subscription_tier?: string | null;
 }
 
 interface SupabaseQuoteItem {
@@ -39,7 +46,32 @@ interface OwnerProfileResult {
   tier: string;
 }
 
-// Helper to fetch owner profile and subscription tier
+// Extract owner profile/tier from a JOINed RPC row (no extra round trip)
+function extractOwnerFromRow(row: SupabaseQuoteRow): OwnerProfileResult {
+  if (!row.user_id) return { profile: undefined, tier: "free" };
+
+  const hasAny =
+    row.owner_business_name ||
+    row.owner_phone ||
+    row.owner_email ||
+    row.owner_address ||
+    row.owner_bank_account;
+
+  const profile: UserProfile | undefined = hasAny
+    ? {
+        id: row.user_id,
+        businessName: row.owner_business_name ?? undefined,
+        phone: row.owner_phone ?? undefined,
+        email: row.owner_email ?? undefined,
+        address: row.owner_address ?? undefined,
+        bankAccount: row.owner_bank_account ?? undefined,
+      }
+    : undefined;
+
+  return { profile, tier: row.owner_subscription_tier ?? "free" };
+}
+
+// Fallback fetch for code paths that don't JOIN profiles (e.g. direct table SELECT)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<OwnerProfileResult> {
   if (!userId) return { profile: undefined, tier: "free" };
@@ -120,7 +152,7 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
 
     const row = data[0] as SupabaseQuoteRow;
     const quote = fromSupabaseFormat(row);
-    const { profile, tier } = await fetchOwnerProfile(supabase, quote.userId || null);
+    const { profile, tier } = extractOwnerFromRow(row);
     quote.ownerProfile = profile;
     // Show watermark when creator is on free tier (or no user = anonymous)
     quote.showWatermark = !quote.userId || tier === "free";
