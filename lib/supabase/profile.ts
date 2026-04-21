@@ -1,18 +1,5 @@
 import type { UserProfile } from "@/types/quote";
 
-// Get the current user's profile via Next.js API route (server-side read)
-export async function getUserProfile(_userId: string): Promise<UserProfile | null> {
-  try {
-    const res = await fetch("/api/profile");
-    if (!res.ok) return null;
-
-    const { profile } = await res.json();
-    return profile ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // Update the current user's profile via Next.js API route
 export async function updateUserProfile(_userId: string, profile: Partial<UserProfile>): Promise<{ success: boolean; error?: string }> {
   try {
