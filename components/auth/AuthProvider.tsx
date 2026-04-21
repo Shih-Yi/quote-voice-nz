@@ -57,25 +57,46 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Persisted across reloads so bindDeviceQuotesToUser runs only once per user
+// per device. Cleared on logout / SIGNED_OUT.
+const BOUND_USER_KEY = "ksq:bound_user_id";
+
+function clearBoundUserId() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(BOUND_USER_KEY);
+  } catch {
+    // Ignore — non-fatal.
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Bind all device quotes to the user (single device token)
+  // Bind all device quotes to the user (single device token).
+  // Dedup key is persisted in localStorage so we don't re-bind on every reload.
+  // Cleared on SIGNED_OUT / logout so new anon quotes created in a logged-out
+  // window can still be claimed by the next sign-in.
   const bindLocalQuotesToUser = useCallback(async (userId: string) => {
+    if (typeof window === "undefined") return;
+    try {
+      if (window.localStorage.getItem(BOUND_USER_KEY) === userId) return;
+    } catch {
+      // localStorage unavailable (private mode) — fall through and bind.
+    }
+
     try {
       const deviceToken = await getDeviceToken();
-      console.log("[Auth] Binding quotes - deviceToken:", deviceToken, "userId:", userId);
-
       const result = await bindDeviceQuotesToUser(deviceToken, userId);
-      console.log("[Auth] Bind result:", result);
-
-      if (result.count > 0) {
-        console.log(`[Auth] Bound ${result.count} quotes to user`);
-      } else if (result.error) {
+      if (result.error) {
         console.error("[Auth] Bind error:", result.error);
-      } else {
-        console.log("[Auth] No quotes to bind (count: 0)");
+        return;
+      }
+      try {
+        window.localStorage.setItem(BOUND_USER_KEY, userId);
+      } catch {
+        // Non-fatal: bind succeeded, we'll just retry next reload.
       }
     } catch (err) {
       console.error("[Auth] Failed to bind quotes:", err);
@@ -100,12 +121,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     boot();
 
-    // Listen for auth changes
-    const unsubscribe = onAuthStateChange((newUser) => {
+    // Listen for auth changes. Only bind on real SIGNED_IN events — ignore
+    // INITIAL_SESSION (page load/refresh) and TOKEN_REFRESHED (hourly renewal)
+    // to avoid hammering /api/quotes/bind.
+    const unsubscribe = onAuthStateChange((event, newUser) => {
       setUser(newUser);
 
-      // When user logs in, bind their local quotes
-      if (newUser) {
+      if (event === "SIGNED_OUT" || !newUser) {
+        clearBoundUserId();
+        return;
+      }
+
+      if (event === "SIGNED_IN") {
         bindLocalQuotesToUser(newUser.id);
       }
     });
@@ -135,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: `Too many attempts. Try again in ${formatRetryAfter(gate.retryAfterSeconds)}.`,
       };
     }
-    const { user: newUser, error } = await signUpWithEmail(email, password);
+    const { error } = await signUpWithEmail(email, password);
     if (error) {
       recordFailure("signup", email);
       return { error: toFriendlyAuthError(error) };
@@ -143,12 +170,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAttempts("signup", email);
     // New accounts default to Remember Me on.
     setRememberMe(true);
-    if (newUser) {
-      setUser(newUser);
-      await bindLocalQuotesToUser(newUser.id);
-    }
+    // setUser + bind are handled by onAuthStateChange(SIGNED_IN) — single entry point.
     return { error: null };
-  }, [bindLocalQuotesToUser]);
+  }, []);
 
   const signIn = useCallback(async (
     email: string,
@@ -161,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: `Too many failed attempts. Try again in ${formatRetryAfter(gate.retryAfterSeconds)}.`,
       };
     }
-    const { user: newUser, error } = await signInWithEmail(email, password);
+    const { error } = await signInWithEmail(email, password);
     if (error) {
       const status = recordFailure("signin", email);
       const friendly = toFriendlyAuthError(error);
@@ -179,12 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearAttempts("signin", email);
     setRememberMe(options?.rememberMe ?? true);
-    if (newUser) {
-      setUser(newUser);
-      await bindLocalQuotesToUser(newUser.id);
-    }
+    // setUser + bind are handled by onAuthStateChange(SIGNED_IN) — single entry point.
     return { error: null };
-  }, [bindLocalQuotesToUser]);
+  }, []);
 
   const signInGoogle = useCallback(async () => {
     // OAuth redirect; default to Remember Me so the session survives the round trip.
@@ -216,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await signOut();
     if (!error) {
       clearRememberMe();
+      clearBoundUserId();
       setUser(null);
     }
     return { error: toFriendlyAuthError(error) };

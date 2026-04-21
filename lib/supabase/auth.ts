@@ -205,16 +205,27 @@ export async function signOut(): Promise<{ error: string | null }> {
   return { error: null };
 }
 
-// Listen for auth state changes
+// Supabase auth event types we care about. See:
+// https://supabase.com/docs/reference/javascript/auth-onauthstatechange
+export type AuthChangeEvent =
+  | "INITIAL_SESSION"
+  | "SIGNED_IN"
+  | "SIGNED_OUT"
+  | "TOKEN_REFRESHED"
+  | "USER_UPDATED"
+  | "PASSWORD_RECOVERY";
+
+// Listen for auth state changes. Exposes the event type so callers can
+// distinguish INITIAL_SESSION / TOKEN_REFRESHED from a real SIGNED_IN.
 export function onAuthStateChange(
-  callback: (user: User | null) => void
+  callback: (event: AuthChangeEvent, user: User | null) => void
 ): (() => void) | undefined {
   const supabase = getSupabase();
   if (!supabase) return undefined;
 
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
-      callback(session?.user ?? null);
+    (event, session) => {
+      callback(event as AuthChangeEvent, session?.user ?? null);
     }
   );
 
