@@ -130,12 +130,15 @@ export async function syncPendingDeletions(): Promise<{
     const state = await getRetryState(DELETE_FAILURES_KEY, quoteId);
 
     if (state && state.attempts >= MAX_RETRY_ATTEMPTS) {
+      // Keep the local tombstone in place so we never create a cloud orphan
+      // (user thought they deleted it, but the row persists in Supabase).
+      // Drop from the auto-retry queue so we stop hammering the server. A
+      // future explicit user action (re-save / re-delete / manual sync) can
+      // re-queue it by clearing the failure state.
       console.error(
-        `[syncPendingDeletions] GAVE UP id=${quoteId} after ${state.attempts} attempts — force-purging local tombstone`
+        `[syncPendingDeletions] GAVE UP id=${quoteId} after ${state.attempts} attempts — tombstone kept for manual resolution`
       );
-      await purgeLocalQuote(quoteId);
       await removeFromDeleteQueue(quoteId);
-      await clearRetryState(DELETE_FAILURES_KEY, quoteId);
       gaveUp++;
       continue;
     }
@@ -251,32 +254,47 @@ export async function getQuoteById(id: string): Promise<Quote | undefined> {
 
 // Fetch latest quote from cloud and update local storage.
 // Safety rules:
-//   1. Locally tombstoned quotes are NOT overwritten — the user has a pending delete.
-//   2. Quotes still in the sync queue (local edits not yet uploaded) are NOT overwritten
-//      — otherwise an older cloud snapshot would clobber pending offline work.
-//   3. If local exists and its updatedAt is newer than cloud, we keep local.
+//   1. Local ownership gate — must already have the quote locally (by id) OR
+//      be signed in and the cloud row's user_id matches. Prevents anyone from
+//      pulling an arbitrary quote by guessing its id (direct SELECT on the
+//      table bypasses the slug-status filter used by public sharing).
+//   2. Locally tombstoned quotes are NOT overwritten — the user has a pending delete.
+//   3. Quotes still in the sync queue (local edits not yet uploaded) are NOT
+//      overwritten — otherwise an older cloud snapshot would clobber pending
+//      offline work.
+//   4. If local exists and its updatedAt is newer than cloud, we keep local.
 export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
+  // Rule 1a — refuse to fetch if we have no local record. The only way to
+  // have a local record is to have created the quote on this device, so this
+  // bounds access to quotes the caller demonstrably owns. Public-share access
+  // uses slug (via getQuoteBySlug), not id.
+  const quotes = await getAllQuotesRaw();
+  const existing = quotes.find((q) => q.id === id);
+  if (!existing) return null;
+  if (existing.deletedAt) return null;
+
   const cloudQuote = await getQuoteByIdFromSupabase(id);
   if (!cloudQuote) return null;
 
-  const quotes = await getAllQuotesRaw();
-  const existing = quotes.find((q) => q.id === id);
-  if (existing?.deletedAt) return null;
+  // Rule 1b — if the cloud row is bound to a user, only return it when the
+  // local copy is bound to the same user. This protects against the case
+  // where someone copies an id from a shared link into their own IndexedDB
+  // by hand.
+  if (cloudQuote.userId && existing.userId && cloudQuote.userId !== existing.userId) {
+    return null;
+  }
 
   // Pending local sync — our copy has changes the cloud hasn't seen yet.
   const pendingSync = (await getSyncQueue()).includes(id);
-  if (pendingSync) return existing ?? null;
+  if (pendingSync) return existing;
 
   // Local is newer — don't overwrite with stale cloud snapshot.
-  if (existing && new Date(existing.updatedAt) >= new Date(cloudQuote.updatedAt)) {
+  if (new Date(existing.updatedAt) >= new Date(cloudQuote.updatedAt)) {
     return existing;
   }
 
   const index = quotes.findIndex((q) => q.id === id);
-  const updatedQuotes =
-    index >= 0
-      ? quotes.map((q, i) => (i === index ? cloudQuote : q))
-      : [...quotes, cloudQuote];
+  const updatedQuotes = quotes.map((q, i) => (i === index ? cloudQuote : q));
 
   await set(QUOTES_KEY, updatedQuotes);
   return cloudQuote;
