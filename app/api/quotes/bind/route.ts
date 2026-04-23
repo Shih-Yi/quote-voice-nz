@@ -61,13 +61,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Cap on how many anon quotes a single bind call can claim. Stops a bad
+  // actor from pre-generating thousands of anon quotes and dumping them on a
+  // fresh account. Legitimate users rarely have more than a handful of
+  // pre-signup drafts; anything above this cap stays anonymous and gets
+  // cleaned up by cleanup_anon_orphan_quotes later.
+  const MAX_BIND_PER_CALL = 50;
+
   try {
-    // Update all quotes matching this token hash that have no user_id yet.
-    // The WHERE clause makes this naturally idempotent at the DB level too.
+    // Select the newest-first batch of candidate rows so the cap always keeps
+    // the user's most recent work rather than a random slice.
+    const { data: candidates, error: selectError } = await supabase
+      .from("quotes")
+      .select("id")
+      .eq("owner_token_hash", tokenHash)
+      .is("user_id", null)
+      .order("created_at", { ascending: false })
+      .limit(MAX_BIND_PER_CALL);
+
+    if (selectError) {
+      console.error("[/api/quotes/bind] Select error:", selectError);
+      return NextResponse.json(
+        { error: selectError.message },
+        { status: 500 }
+      );
+    }
+
+    const ids = (candidates ?? []).map((row: { id: string }) => row.id);
+    if (ids.length === 0) {
+      return NextResponse.json({ success: true, count: 0 });
+    }
+
     const { data, error } = await supabase
       .from("quotes")
       .update({ user_id: user.id })
-      .eq("owner_token_hash", tokenHash)
+      .in("id", ids)
       .is("user_id", null)
       .select("id");
 
@@ -80,6 +108,11 @@ export async function POST(request: NextRequest) {
     }
 
     const count = data?.length ?? 0;
+    if (count === MAX_BIND_PER_CALL) {
+      console.warn(
+        `[/api/quotes/bind] Hit MAX_BIND_PER_CALL for user=${user.id} — older anon quotes left unbound`
+      );
+    }
     return NextResponse.json({ success: true, count });
   } catch (err) {
     console.error("[/api/quotes/bind] Exception:", err);
