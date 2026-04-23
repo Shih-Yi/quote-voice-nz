@@ -27,12 +27,14 @@ as $$
 declare
   v_count bigint;
 begin
+  -- Fully qualify all table references so the function is safe regardless of
+  -- search_path manipulation (defence-in-depth; revoke also blocks public).
   if p_dry_run then
     select count(*) into v_count
     from api.quotes
-    where user_id is null
-      and status = 'draft'
-      and created_at < now() - make_interval(days => p_days);
+    where api.quotes.user_id is null
+      and api.quotes.status = 'draft'
+      and api.quotes.created_at < now() - make_interval(days => p_days);
 
     return query select 'would_delete'::text, v_count;
     return;
@@ -40,9 +42,9 @@ begin
 
   with deleted as (
     delete from api.quotes
-    where user_id is null
-      and status = 'draft'
-      and created_at < now() - make_interval(days => p_days)
+    where api.quotes.user_id is null
+      and api.quotes.status = 'draft'
+      and api.quotes.created_at < now() - make_interval(days => p_days)
     returning id
   )
   select count(*) into v_count from deleted;
