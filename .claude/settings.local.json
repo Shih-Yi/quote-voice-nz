@@ -30,7 +30,9 @@
       "Bash(mkdir -p \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/templates/plumbing-quote-nz\")",
       "Bash(mkdir -p \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/compare/tradify-alternative\")",
       "Read(//Users/sychien/.claude/skills/**)",
-      "Read(//Users/sychien/.claude/skills/graphify/**)"
+      "Read(//Users/sychien/.claude/skills/graphify/**)",
+      "Bash(ls app/auth/ app/api/auth/)",
+      "Bash(ls components/auth/)"
     ]
   }
 }
