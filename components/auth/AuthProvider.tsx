@@ -30,6 +30,9 @@ import {
 } from "@/lib/auth/attemptLimiter";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { bindDeviceQuotesToUser } from "@/lib/supabase/quotes-api";
+import { clearAllLocalData } from "@/lib/storage/cleanup";
+import { getSyncQueue } from "@/lib/storage/quotes";
+import { getPendingCount } from "@/lib/storage/pending";
 
 interface AuthContextType {
   user: User | null;
@@ -234,13 +237,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const { error } = await signOut();
-    if (!error) {
-      clearRememberMe();
-      clearBoundUserId();
-      setUser(null);
+    // Warn if anything local hasn't made it to the cloud yet. Clearing
+    // IndexedDB on sign-out is how we prevent the next user on this device
+    // from seeing the previous user's data, but it also means un-synced
+    // work is gone for good.
+    if (typeof window !== "undefined") {
+      const [pendingAudio, unsyncedQuotes] = await Promise.all([
+        getPendingCount(),
+        getSyncQueue().then((q) => q.length),
+      ]);
+      const unsyncedTotal = pendingAudio + unsyncedQuotes;
+      if (unsyncedTotal > 0) {
+        const proceed = window.confirm(
+          `You have ${unsyncedTotal} unsynced ${unsyncedTotal === 1 ? "item" : "items"} ` +
+            `(recordings or quote edits). Signing out will delete them from this device. Continue?`
+        );
+        if (!proceed) {
+          return { error: null };
+        }
+      }
     }
-    return { error: toFriendlyAuthError(error) };
+
+    const { error } = await signOut();
+    if (error) {
+      return { error: toFriendlyAuthError(error) };
+    }
+
+    clearRememberMe();
+    clearBoundUserId();
+
+    // Wipe all local app state — IndexedDB (quotes, queues, pending audio,
+    // device token) and known localStorage keys. A fresh device token will
+    // be minted lazily on the next getDeviceToken() call, so the next user
+    // cannot inherit the previous user's cloud access.
+    await clearAllLocalData();
+
+    setUser(null);
+    return { error: null };
   }, []);
 
   const requestPasswordReset = useCallback(async (email: string) => {
