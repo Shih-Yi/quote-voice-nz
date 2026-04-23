@@ -2,6 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { rateLimit } from "@/lib/rateLimit";
 import { getServerSupabase } from "@/lib/supabase/server";
+import { getCurrentUserServer } from "@/lib/supabase/auth-server";
+import {
+  getMonthlyUsage,
+  getUserTier,
+  TIER_LIMITS,
+} from "@/lib/supabase/subscription";
+
+interface OwnershipRow {
+  owner_token_hash: string;
+  user_id: string | null;
+}
+
+// Unified ownership rule (replaces pure token-based check).
+// After bind, cloud rows have user_id set. A user on a different device will
+// have a different device token, so token-only check would 403 them off their
+// own data. With user_id present, we require it to match the session user.
+// For anonymous rows (user_id === null), we fall back to the token hash.
+//
+// Returns null on success, or the HTTP response to return.
+function assertOwnership(
+  existing: OwnershipRow,
+  user: { id: string } | null,
+  tokenHash: string
+): NextResponse | null {
+  if (existing.user_id !== null) {
+    if (!user || user.id !== existing.user_id) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    return null;
+  }
+  if (existing.owner_token_hash !== tokenHash) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+  return null;
+}
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -168,13 +203,62 @@ export async function POST(request: NextRequest) {
 
     const tokenHash = hashToken(body.token);
     const op = "POST";
+    const user = await getCurrentUserServer();
 
-    console.log(`[/api/quotes] ${op} start id=${body.id} slug=${body.slug} status=${body.status} items=${sanitizedItems.length} items_sum=${itemsSum}`);
+    console.log(`[/api/quotes] ${op} start id=${body.id} slug=${body.slug} status=${body.status} items=${sanitizedItems.length} items_sum=${itemsSum} user=${user?.id ?? "anon"}`);
+
+    // Check if quote already exists and verify ownership under the unified
+    // user_id-preferred rule.
+    const { data: existing } = await supabase
+      .from("quotes")
+      .select("owner_token_hash, user_id")
+      .eq("id", body.id)
+      .single<OwnershipRow>();
+
+    if (existing) {
+      const denied = assertOwnership(existing, user, tokenHash);
+      if (denied) {
+        console.warn(
+          `[/api/quotes] ${op} DENIED id=${body.id} — ownership mismatch (row.user_id=${existing.user_id}, session.user=${user?.id ?? "anon"})`
+        );
+        return denied;
+      }
+    }
+
+    // Server-side quota gate for logged-in free-tier users on NEW quote rows.
+    // Catches paths that bypass /api/transcribe (e.g. manual-entry quotes
+    // synced from offline). Check-only — transcribe still owns increments to
+    // avoid double-counting the common voice flow.
+    if (user && !existing) {
+      const tier = await getUserTier(user.id);
+      const limits = TIER_LIMITS[tier];
+      if (limits.quotesPerMonth < 99999) {
+        const usage = await getMonthlyUsage(user.id);
+        if (usage.quotesCreated >= limits.quotesPerMonth) {
+          console.warn(
+            `[/api/quotes] ${op} QUOTA_EXCEEDED user=${user.id} tier=${tier} used=${usage.quotesCreated}/${limits.quotesPerMonth}`
+          );
+          return NextResponse.json(
+            {
+              error: "quota_exceeded",
+              limit: limits.quotesPerMonth,
+              used: usage.quotesCreated,
+              tier,
+            },
+            { status: 429 }
+          );
+        }
+      }
+    }
 
     const row = {
       id: body.id,
       slug: body.slug || body.id.slice(0, 8),
       owner_token_hash: tokenHash,
+      // Bind to the session user on insert so ownership is correct from the
+      // start — removes reliance on /api/quotes/bind running after the fact.
+      // For existing rows we preserve user_id via the UPDATE branch below.
+      user_id: user?.id ?? null,
       customer_name: body.customerName,
       customer_phone: body.customerPhone || null,
       customer_email: body.customerEmail || null,
@@ -192,21 +276,6 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Check if quote already exists and verify ownership
-    const { data: existing } = await supabase
-      .from("quotes")
-      .select("owner_token_hash")
-      .eq("id", body.id)
-      .single();
-
-    if (existing && existing.owner_token_hash !== tokenHash) {
-      console.warn(`[/api/quotes] ${op} DENIED id=${body.id} — token mismatch`);
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
-    }
-
     const action = existing ? "UPDATE" : "CREATE";
     console.log(`[/api/quotes] ${op} ${action} id=${body.id}`);
 
@@ -221,14 +290,16 @@ export async function POST(request: NextRequest) {
     // We return owner_token_hash in the .select() so we can detect post-upsert
     // ownership mismatch — protects against a race where someone inserted a row
     // with our id between our SELECT and UPSERT.
-    let upsertResult: { id: string; owner_token_hash: string }[] | null = null;
+    let upsertResult:
+      | { id: string; owner_token_hash: string; user_id: string | null }[]
+      | null = null;
     let lastError: { message?: string; code?: string } | null = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data: result, error } = await supabase
         .from("quotes")
         .upsert(upsertData, { onConflict: "id" })
-        .select("id, owner_token_hash");
+        .select("id, owner_token_hash, user_id");
 
       if (!error) {
         upsertResult = result;
@@ -269,12 +340,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Post-upsert ownership check: detect races between SELECT (line ~123) and
-    // UPSERT where a concurrent request with a different token claimed our id.
-    // Service_role bypasses RLS so we verify explicitly.
-    if (upsertResult[0].owner_token_hash !== tokenHash) {
+    // Post-upsert ownership check: detect races between the pre-upsert SELECT
+    // and the UPSERT where a concurrent request with a different owner claimed
+    // our id. Service_role bypasses RLS so we verify explicitly, using the
+    // same unified rule as the pre-check.
+    const raceDenied = assertOwnership(
+      {
+        owner_token_hash: upsertResult[0].owner_token_hash,
+        user_id: upsertResult[0].user_id,
+      },
+      user,
+      tokenHash
+    );
+    if (raceDenied) {
       console.error(
-        `[/api/quotes] ${op} OWNERSHIP_RACE id=${body.id} — row now owned by a different token hash`
+        `[/api/quotes] ${op} OWNERSHIP_RACE id=${body.id} — row owner changed mid-request`
       );
       return NextResponse.json(
         { error: "Data integrity error — please retry" },
@@ -317,15 +397,15 @@ export async function DELETE(request: NextRequest) {
     }
 
     const tokenHash = hashToken(token);
+    const user = await getCurrentUserServer();
 
-    console.log(`[/api/quotes] DELETE start id=${id}`);
+    console.log(`[/api/quotes] DELETE start id=${id} user=${user?.id ?? "anon"}`);
 
-    // Verify ownership before deleting
     const { data: existing } = await supabase
       .from("quotes")
-      .select("owner_token_hash")
+      .select("owner_token_hash, user_id")
       .eq("id", id)
-      .single();
+      .single<OwnershipRow>();
 
     if (!existing) {
       console.warn(`[/api/quotes] DELETE NOT_FOUND id=${id}`);
@@ -335,12 +415,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    if (existing.owner_token_hash !== tokenHash) {
-      console.warn(`[/api/quotes] DELETE DENIED id=${id} — token mismatch`);
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
+    const denied = assertOwnership(existing, user, tokenHash);
+    if (denied) {
+      console.warn(
+        `[/api/quotes] DELETE DENIED id=${id} — ownership mismatch (row.user_id=${existing.user_id}, session.user=${user?.id ?? "anon"})`
       );
+      return denied;
     }
 
     const { data: deleted, error } = await supabase
