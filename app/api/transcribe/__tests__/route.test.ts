@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { POST } from "../route";
 
 // Mock Groq SDK — must use class to be constructor-compatible
 const mockCreate = vi.fn();
@@ -16,6 +15,22 @@ vi.mock("groq-sdk", () => {
   };
 });
 
+// Bypass the daily quota guards for unit tests — they're covered by the
+// Supabase-integration tests for costGuard directly.
+vi.mock("@/lib/costGuard", () => ({
+  LIMITS: { GLOBAL_DAILY_TRANSCRIBES: 200, ANON_DEVICE_DAILY: 3, ANON_IP_DAILY: 5 },
+  checkGlobalTranscribeCap: vi.fn().mockResolvedValue({ allowed: true, remaining: 199, retryAfter: 0 }),
+  checkAnonDeviceQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 2, retryAfter: 0 }),
+  checkAnonIpQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 4, retryAfter: 0 }),
+  hashIdentifier: (v: string) => `hashed:${v}`,
+}));
+
+vi.mock("@/lib/supabase/auth-server", () => ({
+  getCurrentUserServer: vi.fn().mockResolvedValue(null),
+}));
+
+const { POST } = await import("../route");
+
 function makeFormData(file?: File): FormData {
   const formData = new FormData();
   if (file) {
@@ -24,9 +39,17 @@ function makeFormData(file?: File): FormData {
   return formData;
 }
 
-function makeRequest(formData: FormData): Request {
+function makeRequest(formData: FormData, headers: Record<string, string> = {}): Request {
+  const defaultHeaders: Record<string, string> = {
+    "x-device-token": "dt_test_device",
+    "x-forwarded-for": "127.0.0.1",
+    ...headers,
+  };
   return {
     formData: () => Promise.resolve(formData),
+    headers: {
+      get: (name: string) => defaultHeaders[name.toLowerCase()] ?? null,
+    },
   } as unknown as Request;
 }
 

@@ -54,6 +54,7 @@ const {
   syncPendingQuotes,
   generateSlug,
   countLocalQuotes,
+  refreshQuoteFromCloud,
 } = await import("../quotes");
 
 // --- Test helpers ---
@@ -464,15 +465,15 @@ describe("quotes storage", () => {
   // ─── GET BY SLUG ─────────────────────────────────────
 
   describe("getQuoteBySlug", () => {
-    it("returns the local quote without hitting cloud", async () => {
+    it("returns the local quote even when cloud lookup is offline", async () => {
       const local = makeQuote({ id: "loc-q", slug: "localslug" });
       mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteBySlugFromSupabase.mockRejectedValueOnce(new Error("offline"));
 
       const { getQuoteBySlug } = await import("../quotes");
       const result = await getQuoteBySlug("localslug");
 
       expect(result?.id).toBe("loc-q");
-      expect(mockGetQuoteBySlugFromSupabase).not.toHaveBeenCalled();
     });
 
     it("falls back to cloud when slug is unknown locally", async () => {
@@ -895,7 +896,7 @@ describe("quotes storage", () => {
   });
 
   describe("syncPendingDeletions retry/backoff", () => {
-    it("gives up after MAX_RETRY_ATTEMPTS — force-purges local tombstone", async () => {
+    it("gives up after MAX_RETRY_ATTEMPTS — keeps local tombstone to avoid cloud orphans (audit #6)", async () => {
       mockStore.set("ksq_quotes", [
         makeQuote({ id: "dead-del-q", deletedAt: new Date().toISOString() }),
       ]);
@@ -909,7 +910,11 @@ describe("quotes storage", () => {
 
       expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
       expect(result.gaveUp).toBe(1);
-      expect((mockStore.get("ksq_quotes") as Quote[])).toHaveLength(0);
+      // Tombstone stays — prevents cloud orphan (user thought they deleted it).
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].deletedAt).toBeTruthy();
+      // But it's dropped from auto-retry to stop hammering the server.
       expect((mockStore.get("ksq_delete_queue") as string[])).not.toContain("dead-del-q");
     });
 
@@ -950,6 +955,90 @@ describe("quotes storage", () => {
       const slug = await generateSlug();
       const existingSlugs = existingQuotes.map((q) => q.slug);
       expect(existingSlugs).not.toContain(slug);
+    });
+  });
+
+  // ─── REFRESH FROM CLOUD — OWNERSHIP GATES (audit #7) ─
+
+  describe("refreshQuoteFromCloud", () => {
+    it("refuses to fetch when quote is not present locally", async () => {
+      mockStore.set("ksq_quotes", []);
+      mockGetQuoteByIdFromSupabase.mockClear();
+
+      const result = await refreshQuoteFromCloud("some-random-id");
+
+      expect(result).toBeNull();
+      expect(mockGetQuoteByIdFromSupabase).not.toHaveBeenCalled();
+    });
+
+    it("refuses to fetch when the local row is tombstoned", async () => {
+      const q = makeQuote({ id: "q-tomb", deletedAt: "2026-02-01T00:00:00Z" });
+      mockStore.set("ksq_quotes", [q]);
+      mockGetQuoteByIdFromSupabase.mockClear();
+
+      const result = await refreshQuoteFromCloud("q-tomb");
+
+      expect(result).toBeNull();
+      expect(mockGetQuoteByIdFromSupabase).not.toHaveBeenCalled();
+    });
+
+    it("rejects cloud row bound to a different user_id", async () => {
+      const local = makeQuote({ id: "q1", userId: "user-a", updatedAt: "2026-02-01T00:00:00Z" });
+      mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValueOnce(
+        makeQuote({ id: "q1", userId: "user-b", updatedAt: "2026-03-01T00:00:00Z" })
+      );
+
+      const result = await refreshQuoteFromCloud("q1");
+
+      expect(result).toBeNull();
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].userId).toBe("user-a"); // local untouched
+    });
+
+    it("accepts cloud row when user_ids match", async () => {
+      const local = makeQuote({ id: "q1", userId: "user-a", updatedAt: "2026-02-01T00:00:00Z" });
+      const cloud = makeQuote({
+        id: "q1",
+        userId: "user-a",
+        updatedAt: "2026-03-01T00:00:00Z",
+        customerName: "Updated Name",
+      });
+      mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValueOnce(cloud);
+
+      const result = await refreshQuoteFromCloud("q1");
+
+      expect(result?.customerName).toBe("Updated Name");
+    });
+
+    it("accepts anonymous cloud row when local is also anonymous", async () => {
+      const local = makeQuote({ id: "q1", userId: undefined, updatedAt: "2026-02-01T00:00:00Z" });
+      const cloud = makeQuote({
+        id: "q1",
+        userId: undefined,
+        updatedAt: "2026-03-01T00:00:00Z",
+        customerName: "Fresh",
+      });
+      mockStore.set("ksq_quotes", [local]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValueOnce(cloud);
+
+      const result = await refreshQuoteFromCloud("q1");
+
+      expect(result?.customerName).toBe("Fresh");
+    });
+
+    it("keeps local when it has pending sync (cloud snapshot is stale)", async () => {
+      const local = makeQuote({ id: "q1", customerName: "Local Draft" });
+      mockStore.set("ksq_quotes", [local]);
+      mockStore.set("ksq_sync_queue", ["q1"]);
+      mockGetQuoteByIdFromSupabase.mockResolvedValueOnce(
+        makeQuote({ id: "q1", customerName: "Stale Cloud" })
+      );
+
+      const result = await refreshQuoteFromCloud("q1");
+
+      expect(result?.customerName).toBe("Local Draft");
     });
   });
 });

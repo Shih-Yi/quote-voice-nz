@@ -26,8 +26,12 @@ function assertOwnership(
   user: { id: string } | null,
   tokenHash: string
 ): NextResponse | null {
-  if (existing.user_id !== null) {
-    if (!user || user.id !== existing.user_id) {
+  // Treat null and undefined the same — Postgres returns null for empty
+  // columns, but some callers/mocks leave the field off entirely.
+  const boundUserId = existing.user_id ?? null;
+
+  if (boundUserId !== null) {
+    if (!user || user.id !== boundUserId) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
     return null;

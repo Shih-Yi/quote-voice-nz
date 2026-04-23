@@ -13,8 +13,8 @@ import {
 
 function getClientIp(request: NextRequest): string {
   return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
+    request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers?.get?.("x-real-ip") ||
     "unknown"
   );
 }
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   const ip = getClientIp(request);
-  const deviceToken = request.headers.get("x-device-token");
+  const deviceToken = request.headers?.get?.("x-device-token") ?? null;
 
   try {
     if (!process.env.GROQ_API_KEY) {
