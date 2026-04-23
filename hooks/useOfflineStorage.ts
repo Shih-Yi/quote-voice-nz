@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { getPendingAudio, removePendingAudio } from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
+import { getDeviceToken } from "@/lib/storage/deviceToken";
+import { emit, KSQ_EVENTS } from "@/lib/events";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
 import { v4 as uuidv4 } from "uuid";
 import type { Quote, PendingAudio, ExtractionResult } from "@/types/quote";
@@ -51,13 +53,19 @@ export function useOfflineStorage(): UseOfflineStorageResult {
       const formData = new FormData();
       formData.append("audio", item.blob, "recording.webm");
 
+      const deviceToken = await getDeviceToken();
       const transcribeRes = await fetch("/api/transcribe", {
         method: "POST",
+        headers: { "x-device-token": deviceToken },
         body: formData,
       });
 
       if (!transcribeRes.ok) {
         const errBody = await transcribeRes.json().catch(() => ({}));
+        if (errBody?.action === "login_required") {
+          emit(KSQ_EVENTS.AUTH_REQUIRED, { reason: "anon_quota_exceeded" });
+          throw new Error("login_required");
+        }
         throw new Error(errBody.error || `Transcription failed (${transcribeRes.status})`);
       }
 
@@ -141,6 +149,11 @@ export function useOfflineStorage(): UseOfflineStorageResult {
           successCount++;
         } else if (result.error && isUnrecoverable(result.error)) {
           unrecoverableIds.push(item.id);
+        } else if (result.error === "login_required") {
+          // Quota gate hit — no point retrying the rest on this pass. Items
+          // remain queued and will replay after sign-in.
+          lastError = "login_required";
+          break;
         } else {
           lastError = result.error;
         }

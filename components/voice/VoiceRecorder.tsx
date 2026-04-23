@@ -9,6 +9,8 @@ import { RecordingStatus } from "./RecordingStatus";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { addPendingAudio } from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
+import { getDeviceToken } from "@/lib/storage/deviceToken";
+import { emit, KSQ_EVENTS } from "@/lib/events";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
 import { compressToMp3 } from "@/lib/utils/audioCompress";
 import type { Quote, ExtractionResult } from "@/types/quote";
@@ -53,15 +55,27 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         const isMp3 = mp3Blob.type === "audio/mpeg";
         formData.append("audio", mp3Blob, isMp3 ? "recording.mp3" : "recording.webm");
 
+        const deviceToken = await getDeviceToken();
         const transcribeRes = await fetch("/api/transcribe", {
           method: "POST",
+          headers: { "x-device-token": deviceToken },
           body: formData,
         });
 
         if (!transcribeRes.ok) {
-          // Recoverable error (server/network) — save to pending for retry
+          // Always persist audio so nothing is lost; specific handling below.
           await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
-          throw new Error("Transcription failed");
+
+          const errBody = await transcribeRes.json().catch(() => ({}));
+
+          // Anon daily quota hit — prompt for login; pending audio will replay
+          // automatically after successful sign-in (see AuthGate).
+          if (errBody?.action === "login_required") {
+            emit(KSQ_EVENTS.AUTH_REQUIRED, { reason: "anon_quota_exceeded" });
+            throw new Error("login_required");
+          }
+
+          throw new Error(errBody?.error || "Transcription failed");
         }
 
         const { text } = await transcribeRes.json();
@@ -144,6 +158,10 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         if (err instanceof Error && err.message === "No speech detected") {
           toast.error("No speech detected", {
             description: "Please try recording again",
+          });
+        } else if (err instanceof Error && err.message === "login_required") {
+          toast.info("Free trial limit reached", {
+            description: "Sign in to continue — your recording is saved",
           });
         } else {
           toast.info("Saved offline", {
