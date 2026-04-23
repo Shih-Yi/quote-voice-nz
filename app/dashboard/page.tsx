@@ -22,6 +22,7 @@ import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
 import { UsageMeter } from "@/components/subscription/UsageMeter";
+import { on, KSQ_EVENTS } from "@/lib/events";
 import type { Quote } from "@/types/quote";
 
 export default function Dashboard() {
@@ -46,7 +47,16 @@ export default function Dashboard() {
       }
     }
     loadData();
-  }, []);
+
+    // Refresh the dashboard after AuthGate auto-syncs pending audio post-login.
+    const unsubscribe = on(KSQ_EVENTS.PENDING_SYNCED, () => {
+      getRecentQuotes(20).then((quotes) => {
+        setQuoteGroups(groupQuotesByVersion(quotes).slice(0, 5));
+      });
+      refreshPending();
+    });
+    return unsubscribe;
+  }, [refreshPending]);
 
   const handleQuoteCreated = async () => {
     const quotes = await getRecentQuotes(20);
