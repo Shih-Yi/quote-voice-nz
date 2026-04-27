@@ -47,10 +47,22 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
     setSelectedIds(new Set());
   }, []);
 
+  const isDeletable = useCallback(
+    (q: Quote) => q.status !== "sent" && q.status !== "accepted",
+    []
+  );
+
+  const deletableSelectedIds = useCallback(() => {
+    const deletable = new Set(quotes.filter(isDeletable).map((q) => q.id));
+    return Array.from(selectedIds).filter((id) => deletable.has(id));
+  }, [quotes, selectedIds, isDeletable]);
+
   const handleBulkDelete = useCallback(async () => {
     setIsDeleting(true);
+    const ids = deletableSelectedIds();
+    const skipped = selectedIds.size - ids.length;
     let deleted = 0;
-    for (const id of selectedIds) {
+    for (const id of ids) {
       try {
         await deleteQuote(id);
         deleted++;
@@ -62,9 +74,15 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
     setShowDeleteConfirm(false);
     setSelectedIds(new Set());
     setIsSelecting(false);
-    toast.success(`Deleted ${deleted} quote(s)`);
+    if (skipped > 0) {
+      toast.success(
+        `Deleted ${deleted} quote(s); skipped ${skipped} sent/accepted quote(s)`
+      );
+    } else {
+      toast.success(`Deleted ${deleted} quote(s)`);
+    }
     onComplete();
-  }, [selectedIds, onComplete]);
+  }, [selectedIds, onComplete, deletableSelectedIds]);
 
   const handleExportCsv = useCallback(() => {
     const selected = quotes.filter((q) => selectedIds.has(q.id));
@@ -131,8 +149,13 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
           variant="ghost"
           size="sm"
           onClick={() => setShowDeleteConfirm(true)}
-          disabled={selectedIds.size === 0}
+          disabled={deletableSelectedIds().length === 0}
           className="text-xs h-7 px-2 text-red-500"
+          title={
+            deletableSelectedIds().length === 0 && selectedIds.size > 0
+              ? "Sent/accepted quotes cannot be deleted"
+              : undefined
+          }
         >
           Delete
         </Button>
@@ -157,26 +180,33 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {selectedIds.size} quote(s)?</DialogTitle>
+            <DialogTitle>Delete {deletableSelectedIds().length} quote(s)?</DialogTitle>
             <DialogDescription>
-              This will permanently remove the selected quotes. This action cannot be undone.
+              This will permanently remove the selected draft quotes. This action cannot be undone.
+              {selectedIds.size - deletableSelectedIds().length > 0 && (
+                <span className="block mt-2 text-amber-600">
+                  {selectedIds.size - deletableSelectedIds().length} sent/accepted quote(s) will be skipped — they cannot be deleted.
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-40 overflow-y-auto space-y-1 my-2">
-            {quotes.filter((q) => selectedIds.has(q.id)).map((q) => (
-              <div key={q.id} className="flex justify-between text-sm text-text-muted px-1">
-                <span>{q.customerName}</span>
-                <span>{formatNZD(q.total)}</span>
-              </div>
-            ))}
+            {quotes
+              .filter((q) => selectedIds.has(q.id) && isDeletable(q))
+              .map((q) => (
+                <div key={q.id} className="flex justify-between text-sm text-text-muted px-1">
+                  <span>{q.customerName}</span>
+                  <span>{formatNZD(q.total)}</span>
+                </div>
+              ))}
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-col">
             <Button
               onClick={handleBulkDelete}
-              disabled={isDeleting}
+              disabled={isDeleting || deletableSelectedIds().length === 0}
               className="w-full bg-red-500 hover:bg-red-600"
             >
-              {isDeleting ? "Deleting..." : `Delete ${selectedIds.size} Quote(s)`}
+              {isDeleting ? "Deleting..." : `Delete ${deletableSelectedIds().length} Quote(s)`}
             </Button>
             <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} className="w-full">
               Cancel

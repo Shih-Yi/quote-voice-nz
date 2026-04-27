@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { rateLimit } from "@/lib/rateLimit";
+import { claimIdempotencyKey } from "@/lib/idempotency";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import {
@@ -8,6 +9,8 @@ import {
   getUserTier,
   TIER_LIMITS,
 } from "@/lib/supabase/subscription";
+
+const IDEMPOTENCY_TTL_SECONDS = 10;
 
 interface OwnershipRow {
   owner_token_hash: string;
@@ -211,13 +214,80 @@ export async function POST(request: NextRequest) {
 
     console.log(`[/api/quotes] ${op} start id=${body.id} slug=${body.slug} status=${body.status} items=${sanitizedItems.length} items_sum=${itemsSum} user=${user?.id ?? "anon"}`);
 
+    // Idempotency — skip duplicate work when the same logical request (same
+    // owner + id + version) arrives within the TTL window. Common cause:
+    // network jitter triggers a client retry while the first call is still in
+    // flight or just committed. Without this gate, the duplicate would re-run
+    // upsert (bumping updated_at) and the slug-collision retry loop.
+    //
+    // Header `Idempotency-Key` lets the client pin a key explicitly; otherwise
+    // we derive a deterministic one from owner + id + version. The DB upsert
+    // is itself idempotent on `id`, so a fall-through after a missed cache
+    // (e.g. first call still in flight when retry lands) is safe.
+    const ownerKey = user?.id ?? tokenHash;
+    const idempotencyKey =
+      request.headers?.get?.("idempotency-key")?.slice(0, 200) ||
+      `${ownerKey}:${body.id}:v${body.version || 1}`;
+    const idemRedisKey = `quotes:${idempotencyKey}`;
+    const isFirstCall = await claimIdempotencyKey(
+      idemRedisKey,
+      IDEMPOTENCY_TTL_SECONDS
+    );
+    if (!isFirstCall) {
+      const { data: cachedRow, error: cachedRowError } = await supabase
+        .from("quotes")
+        .select("slug, owner_token_hash, user_id")
+        .eq("id", body.id)
+        .maybeSingle<OwnershipRow & { slug: string }>();
+      if (cachedRowError) {
+        console.error(
+          `[/api/quotes] ${op} IDEMPOTENT_LOOKUP_ERROR id=${body.id}`,
+          cachedRowError
+        );
+        return NextResponse.json(
+          { error: "Failed to verify quote state" },
+          { status: 500 }
+        );
+      }
+      if (cachedRow?.slug) {
+        const denied = assertOwnership(cachedRow, user, tokenHash);
+        if (denied) {
+          console.warn(
+            `[/api/quotes] ${op} IDEMPOTENT_DENIED id=${body.id} — ownership mismatch on cached row`
+          );
+          return denied;
+        }
+        console.log(
+          `[/api/quotes] ${op} IDEMPOTENT_HIT id=${body.id} slug=${cachedRow.slug}`
+        );
+        return NextResponse.json({
+          success: true,
+          slug: cachedRow.slug,
+          cached: true,
+        });
+      }
+      // Row not found — first call still in flight. Fall through; the DB
+      // upsert is keyed on `id` so concurrent inserts converge on one row.
+    }
+
     // Check if quote already exists and verify ownership under the unified
     // user_id-preferred rule.
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("quotes")
       .select("owner_token_hash, user_id")
       .eq("id", body.id)
-      .single<OwnershipRow>();
+      .maybeSingle<OwnershipRow>();
+
+    if (existingError) {
+      console.error(
+        `[/api/quotes] ${op} EXISTING_LOOKUP_ERROR id=${body.id}`,
+        existingError
+      );
+      return NextResponse.json(
+        { error: "Failed to verify quote ownership" },
+        { status: 500 }
+      );
+    }
 
     if (existing) {
       const denied = assertOwnership(existing, user, tokenHash);
@@ -236,22 +306,20 @@ export async function POST(request: NextRequest) {
     if (user && !existing) {
       const tier = await getUserTier(user.id);
       const limits = TIER_LIMITS[tier];
-      if (limits.quotesPerMonth < 99999) {
-        const usage = await getMonthlyUsage(user.id);
-        if (usage.quotesCreated >= limits.quotesPerMonth) {
-          console.warn(
-            `[/api/quotes] ${op} QUOTA_EXCEEDED user=${user.id} tier=${tier} used=${usage.quotesCreated}/${limits.quotesPerMonth}`
-          );
-          return NextResponse.json(
-            {
-              error: "quota_exceeded",
-              limit: limits.quotesPerMonth,
-              used: usage.quotesCreated,
-              tier,
-            },
-            { status: 429 }
-          );
-        }
+      const usage = await getMonthlyUsage(user.id);
+      if (usage.quotesCreated >= limits.quotesPerMonth) {
+        console.warn(
+          `[/api/quotes] ${op} QUOTA_EXCEEDED user=${user.id} tier=${tier} used=${usage.quotesCreated}/${limits.quotesPerMonth}`
+        );
+        return NextResponse.json(
+          {
+            error: "quota_exceeded",
+            limit: limits.quotesPerMonth,
+            used: usage.quotesCreated,
+            tier,
+          },
+          { status: 429 }
+        );
       }
     }
 
@@ -405,11 +473,22 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`[/api/quotes] DELETE start id=${id} user=${user?.id ?? "anon"}`);
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("quotes")
-      .select("owner_token_hash, user_id")
+      .select("owner_token_hash, user_id, status")
       .eq("id", id)
-      .single<OwnershipRow>();
+      .maybeSingle<OwnershipRow & { status: string | null }>();
+
+    if (existingError) {
+      console.error(
+        `[/api/quotes] DELETE LOOKUP_ERROR id=${id}`,
+        existingError
+      );
+      return NextResponse.json(
+        { error: "Failed to verify quote ownership" },
+        { status: 500 }
+      );
+    }
 
     if (!existing) {
       console.warn(`[/api/quotes] DELETE NOT_FOUND id=${id}`);
@@ -425,6 +504,19 @@ export async function DELETE(request: NextRequest) {
         `[/api/quotes] DELETE DENIED id=${id} — ownership mismatch (row.user_id=${existing.user_id}, session.user=${user?.id ?? "anon"})`
       );
       return denied;
+    }
+
+    if (existing.status === "sent" || existing.status === "accepted") {
+      console.warn(
+        `[/api/quotes] DELETE BLOCKED id=${id} status=${existing.status} — protected status`
+      );
+      return NextResponse.json(
+        {
+          error: `Cannot delete a quote that has been ${existing.status}`,
+          status: existing.status,
+        },
+        { status: 403 }
+      );
     }
 
     const { data: deleted, error } = await supabase

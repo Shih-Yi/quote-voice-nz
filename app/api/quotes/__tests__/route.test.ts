@@ -17,6 +17,12 @@ vi.mock("@/lib/rateLimit", () => ({
   rateLimit: vi.fn(() => null),
 }));
 
+// --- Mock idempotency (claim slot succeeds by default; override per test) ---
+const mockClaimIdempotencyKey = vi.fn().mockResolvedValue(true);
+vi.mock("@/lib/idempotency", () => ({
+  claimIdempotencyKey: (...a: unknown[]) => mockClaimIdempotencyKey(...a),
+}));
+
 import { POST, DELETE } from "../route";
 
 // --- Helpers ---
@@ -49,6 +55,7 @@ function mockChain(finalResult: { data?: unknown; error?: unknown }) {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(finalResult),
+    maybeSingle: vi.fn().mockResolvedValue(finalResult),
     insert: vi.fn().mockResolvedValue(finalResult),
     upsert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
@@ -60,6 +67,7 @@ function mockChain(finalResult: { data?: unknown; error?: unknown }) {
 describe("POST /api/quotes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClaimIdempotencyKey.mockResolvedValue(true);
   });
 
   it("returns 400 when id is missing", async () => {
@@ -172,7 +180,7 @@ describe("POST /api/quotes", () => {
       { id: "i2", description: "Parts", quantity: 3, unitPrice: 20, total: 999 },
     ];
 
-    const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
+    const selectChain = mockChain({ data: null, error: null });
 
     const upsertFn = vi.fn().mockReturnThis();
     const upsertChain = {
@@ -182,6 +190,7 @@ describe("POST /api/quotes", () => {
       }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: upsertFn,
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -209,7 +218,7 @@ describe("POST /api/quotes", () => {
     const { createHash } = await import("crypto");
     const tokenHash = createHash("sha256").update("dt_test_token").digest("hex");
 
-    const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
+    const selectChain = mockChain({ data: null, error: null });
 
     // upsert().select() chain: select must be the terminal promise.
     // Returned row includes owner_token_hash so the post-upsert ownership check passes.
@@ -220,6 +229,7 @@ describe("POST /api/quotes", () => {
       }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -256,6 +266,7 @@ describe("POST /api/quotes", () => {
       }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -277,7 +288,7 @@ describe("POST /api/quotes", () => {
 
 
   it("returns 409 when post-upsert ownership hash differs (race)", async () => {
-    const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
+    const selectChain = mockChain({ data: null, error: null });
 
     // Simulate concurrent write: row we just upserted now has a different token hash
     const upsertChain = {
@@ -287,6 +298,7 @@ describe("POST /api/quotes", () => {
       }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -321,12 +333,13 @@ describe("POST /api/quotes", () => {
   });
 
   it("returns 500 on upsert error", async () => {
-    const selectChain = mockChain({ data: null, error: { code: "PGRST116" } });
+    const selectChain = mockChain({ data: null, error: null });
 
     const upsertChain = {
       select: vi.fn().mockResolvedValue({ data: null, error: { message: "DB error" } }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       upsert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -342,6 +355,46 @@ describe("POST /api/quotes", () => {
     const req = makeRequest("POST", validPayload());
     const res = await POST(req);
     expect(res.status).toBe(500);
+  });
+
+  describe("idempotency", () => {
+    it("returns cached slug without upsert when same key replays within TTL", async () => {
+      mockClaimIdempotencyKey.mockResolvedValueOnce(false);
+
+      const { createHash } = await import("crypto");
+      const tokenHash = createHash("sha256")
+        .update("dt_test_token")
+        .digest("hex");
+
+      const cachedRowChain = mockChain({
+        data: { slug: "cached-slug", owner_token_hash: tokenHash, user_id: null },
+        error: null,
+      });
+      mockFrom.mockReturnValue(cachedRowChain);
+
+      const req = makeRequest("POST", validPayload());
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.cached).toBe(true);
+      expect(body.slug).toBe("cached-slug");
+      // Only the cached-row SELECT should have hit the DB — no upsert path.
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+    });
+
+    it("denies idempotent replay when ownership mismatches the cached row", async () => {
+      mockClaimIdempotencyKey.mockResolvedValueOnce(false);
+
+      const cachedRowChain = mockChain({
+        data: { slug: "cached-slug", owner_token_hash: "someone-else", user_id: null },
+        error: null,
+      });
+      mockFrom.mockReturnValue(cachedRowChain);
+
+      const req = makeRequest("POST", validPayload());
+      const res = await POST(req);
+      expect(res.status).toBe(403);
+    });
   });
 });
 
@@ -397,6 +450,7 @@ describe("DELETE /api/quotes", () => {
       select: vi.fn().mockResolvedValue({ data: [{ id: "q1" }], error: null }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       insert: vi.fn().mockResolvedValue({ data: null, error: null }),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -430,6 +484,7 @@ describe("DELETE /api/quotes", () => {
       select: vi.fn().mockResolvedValue({ data: [], error: null }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       insert: vi.fn().mockResolvedValue({ data: null, error: null }),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
@@ -447,6 +502,28 @@ describe("DELETE /api/quotes", () => {
     expect(res.status).toBe(500);
   });
 
+  it.each(["sent", "accepted"] as const)(
+    "returns 403 when status is %s (protected)",
+    async (status) => {
+      const { createHash } = await import("crypto");
+      const tokenHash = createHash("sha256")
+        .update("dt_test_token")
+        .digest("hex");
+
+      const selectChain = mockChain({
+        data: { owner_token_hash: tokenHash, user_id: null, status },
+        error: null,
+      });
+      mockFrom.mockReturnValue(selectChain);
+
+      const req = makeRequest("DELETE", { id: "q1", token: "dt_test_token" });
+      const res = await DELETE(req);
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.status).toBe(status);
+    }
+  );
+
   it("returns 500 on delete error", async () => {
     const { createHash } = await import("crypto");
     const tokenHash = createHash("sha256").update("dt_test_token").digest("hex");
@@ -461,6 +538,7 @@ describe("DELETE /api/quotes", () => {
       select: vi.fn().mockResolvedValue({ data: null, error: { message: "DB error" } }),
       eq: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       insert: vi.fn().mockResolvedValue({ data: null, error: null }),
       update: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
