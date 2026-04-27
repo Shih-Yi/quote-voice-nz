@@ -934,6 +934,146 @@ describe("quotes storage", () => {
       expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
       expect(result.skipped).toBe(1);
     });
+
+    it("attempts=4 still attempts cloud delete (boundary: not yet at MAX_RETRY_ATTEMPTS=5)", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({ success: false, error: "Timeout" });
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "edge-del-q", deletedAt: new Date().toISOString() }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["edge-del-q"]);
+      // 4 attempts at lastAttempt long enough ago that backoff has elapsed.
+      mockStore.set("ksq_delete_failures", {
+        "edge-del-q": { attempts: 4, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      expect(mockDeleteQuoteFromSupabase).toHaveBeenCalledOnce();
+      expect(result.failed).toBe(1);
+      expect(result.gaveUp).toBe(0);
+      // Failure counter advances to 5 — next pass will give up.
+      const failures = mockStore.get("ksq_delete_failures") as Record<
+        string,
+        { attempts: number }
+      >;
+      expect(failures["edge-del-q"].attempts).toBe(5);
+    });
+
+    it("after giveUp, tombstone stays hidden from getAllQuotes() but visible to sync internals", async () => {
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "ghost-q", deletedAt: new Date().toISOString() }),
+        makeQuote({ id: "live-q" }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["ghost-q"]);
+      mockStore.set("ksq_delete_failures", {
+        "ghost-q": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      const { syncPendingDeletions } = await import("../quotes");
+      await syncPendingDeletions();
+
+      // UI must not show the gave-up tombstone — feels deleted from the user's
+      // perspective even though the cloud row may remain.
+      const visible = await getAllQuotes();
+      expect(visible.map((q) => q.id)).toEqual(["live-q"]);
+    });
+
+    it("re-deleting a gave-up quote clears retry state so a fresh sync runs", async () => {
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "revive-del", deletedAt: new Date().toISOString() }),
+      ]);
+      // Previous giveUp left a stale failure counter at 5 and dropped from queue.
+      mockStore.set("ksq_delete_queue", []);
+      mockStore.set("ksq_delete_failures", {
+        "revive-del": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      // User explicitly deletes again — deleteQuote() clears retry state.
+      mockDeleteQuoteFromSupabase.mockResolvedValueOnce({ success: true });
+      await deleteQuote("revive-del");
+
+      const failures = mockStore.get("ksq_delete_failures") as Record<string, unknown>;
+      expect(failures["revive-del"]).toBeUndefined();
+    });
+
+    it("mixed queue: gave-up + backoff + fresh-failure handled independently in one pass", async () => {
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "dead", deletedAt: new Date().toISOString() }),
+        makeQuote({ id: "wait", deletedAt: new Date().toISOString() }),
+        makeQuote({ id: "fresh", deletedAt: new Date().toISOString() }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["dead", "wait", "fresh"]);
+      mockStore.set("ksq_delete_failures", {
+        dead: { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+        wait: { attempts: 1, lastAttemptAt: new Date().toISOString() },
+        // fresh: no failure state — attempts cloud call
+      });
+      mockDeleteQuoteFromSupabase.mockResolvedValue({
+        success: false,
+        error: "Network",
+      });
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      // Only `fresh` reaches the network — `dead` short-circuits to giveUp,
+      // `wait` short-circuits to backoff.
+      expect(mockDeleteQuoteFromSupabase).toHaveBeenCalledTimes(1);
+      expect(result.gaveUp).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.failed).toBe(1);
+
+      const queue = mockStore.get("ksq_delete_queue") as string[];
+      expect(queue).toContain("wait"); // still queued, in backoff
+      expect(queue).toContain("fresh"); // still queued, will retry
+      expect(queue).not.toContain("dead"); // dropped from auto-retry
+    });
+  });
+
+  describe("syncPendingQuotes — retry exhaustion side effects", () => {
+    it("after giveUp, quote is still locally readable (kept for user re-action)", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "stuck-q", customerName: "ACME" })]);
+      mockStore.set("ksq_sync_queue", ["stuck-q"]);
+      mockStore.set("ksq_sync_failures", {
+        "stuck-q": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      await syncPendingQuotes();
+
+      // Quote is NOT purged — user can still see/edit it. Re-saving will
+      // re-queue with a clean retry counter (since giveUp cleared state).
+      const local = await getQuoteById("stuck-q");
+      expect(local).toBeDefined();
+      expect(local?.customerName).toBe("ACME");
+    });
+
+    it("re-saving a gave-up quote re-queues it with a fresh retry counter", async () => {
+      const quote = makeQuote({ id: "retry-q", customerName: "Reborn" });
+      mockStore.set("ksq_quotes", [quote]);
+      mockStore.set("ksq_sync_queue", ["retry-q"]);
+      mockStore.set("ksq_sync_failures", {
+        "retry-q": { attempts: 5, lastAttemptAt: "2020-01-01T00:00:00Z" },
+      });
+
+      // First syncPendingQuotes pass gives up and clears retry state for sync.
+      await syncPendingQuotes();
+      const queueAfterGiveup = mockStore.get("ksq_sync_queue") as string[];
+      expect(queueAfterGiveup).not.toContain("retry-q");
+
+      // User re-saves with cloud failing again.
+      mockSyncQuoteToSupabase.mockResolvedValueOnce({ success: false, error: "Network" });
+      await saveQuote(quote);
+
+      // Re-queued with attempts back at 1 (state was cleared at giveUp).
+      const queueAfterResave = mockStore.get("ksq_sync_queue") as string[];
+      expect(queueAfterResave).toContain("retry-q");
+      const failures = mockStore.get("ksq_sync_failures") as Record<
+        string,
+        { attempts: number }
+      >;
+      expect(failures["retry-q"].attempts).toBe(1);
+    });
   });
 
   // ─── GENERATE SLUG ───────────────────────────────────
