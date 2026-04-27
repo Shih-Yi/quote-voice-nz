@@ -168,9 +168,7 @@ function BillingContent() {
               {/* Limit summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-border">
                 <div className="text-center">
-                  <p className="text-lg font-bold text-text">
-                    {limits.quotesPerMonth >= 99999 ? "∞" : limits.quotesPerMonth}
-                  </p>
+                  <p className="text-lg font-bold text-text">{limits.quotesPerMonth}</p>
                   <p className="text-xs text-text-muted">Quotes/mo</p>
                 </div>
                 <div className="text-center">
@@ -178,9 +176,7 @@ function BillingContent() {
                   <p className="text-xs text-text-muted">Emails/mo</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-lg font-bold text-text">
-                    {limits.templates >= 99999 ? "∞" : limits.templates}
-                  </p>
+                  <p className="text-lg font-bold text-text">{limits.templates}</p>
                   <p className="text-xs text-text-muted">Templates</p>
                 </div>
                 <div className="text-center">
@@ -242,16 +238,16 @@ function BillingContent() {
               <CardHeader>
                 <CardTitle>Upgrade to Pro</CardTitle>
                 <CardDescription>
-                  Unlock unlimited quotes, no watermark, CSV export, and more.
+                  Unlock 200 quotes/month, no watermark, CSV export, and more.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <ul className="text-sm text-text space-y-1.5">
                   {[
-                    "Unlimited voice quotes (currently 5/mo)",
+                    "200 voice quotes per month (currently 5/mo)",
                     "No ChurQuote watermark on quotes & PDFs",
                     "50 email sends per month",
-                    "Unlimited item templates",
+                    "50 item templates",
                     "Full revenue dashboard & CSV export",
                     "14-day free trial — no credit card commitment",
                   ].map((item) => (

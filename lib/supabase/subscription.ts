@@ -5,6 +5,10 @@ export type SubscriptionStatus = "active" | "trialing" | "past_due" | "cancelled
 
 export interface TierLimits {
   quotesPerMonth: number;
+  // Daily cap layered under the monthly cap so a single free user can't burn
+  // their full month allowance in one day and lock themselves out for weeks.
+  // Mirrors the anon device daily cap to keep abuse limits symmetrical.
+  quotesPerDay: number;
   emailsPerMonth: number;
   templates: number;
   attachmentsPerQuote: number;
@@ -30,24 +34,27 @@ export interface SubscriptionInfo {
 export const TIER_LIMITS: Record<SubscriptionTier, TierLimits> = {
   free: {
     quotesPerMonth: 5,
+    quotesPerDay: 3,
     emailsPerMonth: 3,
     templates: 3,
     attachmentsPerQuote: 3,
     versions: 2,
   },
   pro: {
-    quotesPerMonth: 99999,
+    quotesPerMonth: 200,
+    quotesPerDay: 10,
     emailsPerMonth: 50,
-    templates: 99999,
+    templates: 50,
     attachmentsPerQuote: 20,
-    versions: 99999,
+    versions: 10,
   },
   team: {
-    quotesPerMonth: 99999,
+    quotesPerMonth: 400,
+    quotesPerDay: 20,
     emailsPerMonth: 200,
-    templates: 99999,
+    templates: 100,
     attachmentsPerQuote: 20,
-    versions: 99999,
+    versions: 20,
   },
 };
 
@@ -134,10 +141,7 @@ export async function checkAndIncrementUsage(
   const limits = TIER_LIMITS[tier];
   const limit = field === "quotes_created" ? limits.quotesPerMonth : limits.emailsPerMonth;
 
-  // Unlimited tiers — skip DB check
-  if (limit >= 99999) {
-    return { allowed: true, limit, used: 0 };
-  }
+  // No "unlimited" short-circuit — every tier has a hard cap to prevent abuse.
 
   if (!supabase) {
     return { allowed: true, limit, used: 0 };

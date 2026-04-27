@@ -21,7 +21,7 @@ const REASON_COPY: Record<
 > = {
   quotes: {
     title: "You've used all your voice quotes this month",
-    body: "Upgrade to Pro for unlimited voice quotes, no watermarks, and heaps more.",
+    body: "Upgrade to Pro for 200 voice quotes/month, no watermarks, and heaps more.",
   },
   emails: {
     title: "You've hit your monthly email limit",

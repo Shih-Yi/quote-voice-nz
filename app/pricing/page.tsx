@@ -45,7 +45,7 @@ interface Feature {
 
 const FEATURES: Feature[] = [
   // Core
-  { label: "Voice-to-Quote", free: "5 / month", pro: "Unlimited", team: "Unlimited" },
+  { label: "Voice-to-Quote", free: "5 / month", pro: "200 / month", team: "400 / month" },
   { label: "Quote editing & delete", free: true, pro: true, team: true },
   { label: "GST calculation (15%)", free: true, pro: true, team: true },
   { label: "Customer signature", free: true, pro: true, team: true },
@@ -55,9 +55,9 @@ const FEATURES: Feature[] = [
   { label: "Email quote sending", free: "3 / month", pro: "50 / month", team: "200 / month" },
   { label: "PDF export", free: "With watermark", pro: "No watermark", team: "No watermark" },
   // Management
-  { label: "Quote versioning", free: "Max 2", pro: "Unlimited", team: "Unlimited" },
+  { label: "Quote versioning", free: "Max 2", pro: "Up to 10", team: "Up to 20" },
   { label: "Version diff view", free: false, pro: true, team: true },
-  { label: "Item templates", free: "3 templates", pro: "Unlimited", team: "Unlimited + shared" },
+  { label: "Item templates", free: "3 templates", pro: "50 templates", team: "100 templates + shared" },
   { label: "Image attachments", free: "3 / quote", pro: "20 / quote", team: "20 / quote" },
   { label: "Bulk operations", free: false, pro: true, team: true },
   { label: "CSV export", free: false, pro: true, team: true },
@@ -205,9 +205,9 @@ export default function PricingPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm font-medium">Unlimited voice quotes</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm font-medium">200 voice quotes / month</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">50 email sends / month</span></div>
-                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Unlimited templates</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">50 item templates</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">No watermark</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Full revenue dashboard</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">CSV export & bulk ops</span></div>
@@ -246,7 +246,8 @@ export default function PricingPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm font-medium">Everything in Pro</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm font-medium">400 voice quotes / month</span></div>
+                <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Everything in Pro</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">200 email sends / month</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Up to 5 team members</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Role-based access control</span></div>
@@ -300,8 +301,8 @@ export default function PricingPage() {
         <div className="mt-8 p-4 bg-bg-white rounded-lg border border-border text-xs text-text-muted">
           <p className="font-medium text-text mb-1">Plan limits at a glance</p>
           <p>Free: {TIER_LIMITS.free.quotesPerMonth} quotes · {TIER_LIMITS.free.emailsPerMonth} emails · {TIER_LIMITS.free.templates} templates · {TIER_LIMITS.free.attachmentsPerQuote} attachments/quote</p>
-          <p className="mt-0.5">Pro: Unlimited quotes · {TIER_LIMITS.pro.emailsPerMonth} emails/mo · Unlimited templates · {TIER_LIMITS.pro.attachmentsPerQuote} attachments/quote</p>
-          <p className="mt-0.5">Team: Unlimited quotes · {TIER_LIMITS.team.emailsPerMonth} emails/mo · Unlimited templates · {TIER_LIMITS.team.attachmentsPerQuote} attachments/quote</p>
+          <p className="mt-0.5">Pro: {TIER_LIMITS.pro.quotesPerMonth} quotes/mo ({TIER_LIMITS.pro.quotesPerDay}/day) · {TIER_LIMITS.pro.emailsPerMonth} emails/mo · {TIER_LIMITS.pro.templates} templates · {TIER_LIMITS.pro.attachmentsPerQuote} attachments/quote · {TIER_LIMITS.pro.versions} versions/quote</p>
+          <p className="mt-0.5">Team: {TIER_LIMITS.team.quotesPerMonth} quotes/mo ({TIER_LIMITS.team.quotesPerDay}/day) · {TIER_LIMITS.team.emailsPerMonth} emails/mo · {TIER_LIMITS.team.templates} templates · {TIER_LIMITS.team.attachmentsPerQuote} attachments/quote · {TIER_LIMITS.team.versions} versions/quote</p>
         </div>
 
         {/* Footer note */}

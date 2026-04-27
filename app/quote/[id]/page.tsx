@@ -185,7 +185,7 @@ export default function QuoteEditorPage({ params }: PageProps) {
     if (!quote) return;
 
     if (versionLimitReached) {
-      toast.error(`Version limit reached (${limits.versions}). Upgrade to Pro for unlimited versions.`);
+      toast.error(`Version limit reached (${limits.versions}). Upgrade to Pro for up to 10 versions.`);
       return;
     }
 

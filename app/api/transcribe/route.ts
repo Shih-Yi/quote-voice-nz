@@ -8,6 +8,7 @@ import {
   checkGlobalTranscribeCap,
   checkAnonDeviceQuota,
   checkAnonIpQuota,
+  consumeUserDailyQuota,
   LIMITS,
 } from "@/lib/costGuard";
 
@@ -113,19 +114,39 @@ export async function POST(request: NextRequest) {
       const tier = await getUserTier(user.id);
       const limits = TIER_LIMITS[tier];
       const limit = limits.quotesPerMonth;
-      if (limit < 99999) {
-        const usage = await getMonthlyUsage(user.id);
-        if (usage.quotesCreated >= limit) {
-          return NextResponse.json(
-            {
-              error: "quota_exceeded",
-              limit,
-              used: usage.quotesCreated,
-              tier,
-            },
-            { status: 429 }
-          );
-        }
+      const usage = await getMonthlyUsage(user.id);
+      if (usage.quotesCreated >= limit) {
+        return NextResponse.json(
+          {
+            error: "quota_exceeded",
+            limit,
+            used: usage.quotesCreated,
+            tier,
+          },
+          { status: 429 }
+        );
+      }
+
+      // Daily cap layered under monthly — free tier can't dump full month
+      // allowance in one day. Consumes (increments) here so the gate is
+      // self-contained; /api/extract peeks without consuming to avoid double
+      // counting the paired voice flow.
+      const dailyGuard = await consumeUserDailyQuota(
+        user.id,
+        limits.quotesPerDay
+      );
+      if (!dailyGuard.allowed) {
+        return NextResponse.json(
+          {
+            error: "daily_quota_exceeded",
+            limit: limits.quotesPerDay,
+            tier,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(dailyGuard.retryAfter) },
+          }
+        );
       }
     }
 

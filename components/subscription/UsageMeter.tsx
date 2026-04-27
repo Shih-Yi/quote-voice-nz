@@ -11,12 +11,9 @@ interface UsageMeterProps {
 }
 
 export function UsageMeter({ type, compact = false, className = "" }: UsageMeterProps) {
-  const { usage, limits, tier, isLoading } = useSubscription();
+  const { usage, limits, isLoading } = useSubscription();
 
   if (isLoading) return null;
-
-  // Pro/Team: unlimited — don't show meter
-  if (tier !== "free") return null;
 
   const used = type === "quotes" ? usage.quotesCreated : usage.emailsSent;
   const limit = type === "quotes" ? limits.quotesPerMonth : limits.emailsPerMonth;

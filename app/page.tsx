@@ -77,7 +77,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "How much does it cost?",
-    a: "Free forever for casual use (5 quotes/month). Pro is $29/month NZD for unlimited quoting, Team is $49/month for crews. Both come with a 14-day free trial \u2014 no card needed to start. Full breakdown on the pricing page.",
+    a: "Free forever for casual use (5 quotes/month). Pro is $29/month NZD for 200 quotes/month, Team is $49/month for crews (400/month). Both come with a 14-day free trial \u2014 no card needed to start. Full breakdown on the pricing page.",
   },
   {
     q: "I already use Tradify / Fergus. Why switch?",

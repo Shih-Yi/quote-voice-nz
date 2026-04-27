@@ -42,7 +42,7 @@ export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
     if (!newDesc.trim()) return;
 
     if (templates.length >= limits.templates) {
-      toast.error(`Template limit reached (${limits.templates}). Upgrade to Pro for unlimited templates.`);
+      toast.error(`Template limit reached (${limits.templates}). Upgrade to Pro for 50 templates.`);
       return;
     }
 
@@ -144,7 +144,7 @@ export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
                     href="/pricing"
                     className="block w-full text-center text-xs text-amber-600 hover:text-amber-700 py-1"
                   >
-                    🔒 {templates.length}/{limits.templates} templates — Upgrade for unlimited
+                    🔒 {templates.length}/{limits.templates} templates — Upgrade for more
                   </a>
                 ) : (
                   <Button
