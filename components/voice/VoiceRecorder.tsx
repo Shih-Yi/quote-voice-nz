@@ -90,14 +90,24 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         // Extract quote data
         const extractRes = await fetch("/api/extract", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-token": deviceToken,
+          },
           body: JSON.stringify({ text }),
         });
 
         if (!extractRes.ok) {
           // Recoverable error — save to pending for retry
           await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
-          throw new Error("Extraction failed");
+
+          const errBody = await extractRes.json().catch(() => ({}));
+          if (errBody?.action === "login_required") {
+            emit(KSQ_EVENTS.AUTH_REQUIRED, { reason: "anon_quota_exceeded" });
+            throw new Error("login_required");
+          }
+
+          throw new Error(errBody?.error || "Extraction failed");
         }
 
         const extraction: ExtractionResult = await extractRes.json();
@@ -162,6 +172,14 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         } else if (err instanceof Error && err.message === "login_required") {
           toast.info("Free trial limit reached", {
             description: "Sign in to continue — your recording is saved",
+          });
+        } else if (err instanceof Error && err.name === "PendingAudioTooLargeError") {
+          toast.error("Recording too large", {
+            description: "Please record a shorter clip (max ~24MB)",
+          });
+        } else if (err instanceof Error && err.name === "PendingAudioQuotaExceededError") {
+          toast.error("Device storage full", {
+            description: "Sync existing recordings before adding more",
           });
         } else {
           toast.info("Saved offline", {

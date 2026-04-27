@@ -30,7 +30,7 @@
 - **Sync Logic:** - Show "Sync All" button with a counter.
   - Auto-check on app launch.
 - **Safety:** Add "Download Audio" option for pending items as a fallback.
-- **Limit:** Max 2 mins recording (approx 20MB) to ensure stability.
+- **Limit:** Max 2 mins recording at 128kbps (~2MB typical, 24MB hard cap in `lib/storage/pending.ts`). Stays under Whisper's 25MB server limit.
 
 ## 📤 Delivery Strategy
 - **Primary:** Generate a unique, public-facing URL for each quote (e.g., ksq.nz/q/abc-123).

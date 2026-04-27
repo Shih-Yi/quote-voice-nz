@@ -30,7 +30,15 @@ export default function Dashboard() {
   const [quoteGroups, setQuoteGroups] = useState<QuoteGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [failedIds, setFailedIds] = useState<string[]>([]);
-  const { pendingCount, isSyncing, syncAll, discardPendingByIds, refreshPending } = useOfflineStorage();
+  const {
+    pendingCount,
+    isSyncing,
+    staleState,
+    syncAll,
+    discardPendingByIds,
+    refreshPending,
+    downloadStaleAudio,
+  } = useOfflineStorage();
 
   useEffect(() => {
     async function loadData() {
@@ -197,6 +205,39 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* Stale Pending Audio Banner — surfaced when items have lingered
+            beyond 7/30 days. We never auto-delete; user decides whether to
+            download or discard. */}
+        {staleState.staleCount > 0 && (
+          <div
+            className={`p-3 rounded-lg border ${
+              staleState.ancientCount > 0
+                ? "bg-red-50 border-red-300 text-red-800"
+                : "bg-amber-50 border-amber-300 text-amber-800"
+            }`}
+          >
+            <p className="text-sm font-medium">
+              {staleState.ancientCount > 0
+                ? `${staleState.ancientCount} recording${staleState.ancientCount > 1 ? "s" : ""} older than 30 days — strongly recommend backup`
+                : `${staleState.staleCount} recording${staleState.staleCount > 1 ? "s" : ""} older than 7 days`}
+            </p>
+            <p className="text-xs mt-1 opacity-80">
+              These haven&apos;t synced. Sign in or check connection to retry, or download as backup.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={async () => {
+                const n = await downloadStaleAudio();
+                if (n > 0) toast.success(`Downloaded ${n} recording${n > 1 ? "s" : ""}`);
+              }}
+            >
+              Download {staleState.staleCount} Recording{staleState.staleCount > 1 ? "s" : ""}
+            </Button>
+          </div>
+        )}
 
         {/* Sync Button */}
         {pendingCount > 0 && (
