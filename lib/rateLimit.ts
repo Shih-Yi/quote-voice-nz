@@ -67,7 +67,17 @@ const upstashLimiters = new Map<string, Ratelimit>();
 function getUpstashClient(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
+  if (!url || !token) {
+    // In-memory fallback is per-Lambda-instance and resets on cold start —
+    // unsafe on Vercel where multiple instances run concurrently. Refuse to
+    // boot in production so the misconfiguration is loud, not silent.
+    if (process.env.VERCEL_ENV === "production") {
+      throw new Error(
+        "[rateLimit] UPSTASH_REDIS_REST_URL/TOKEN required in production"
+      );
+    }
+    return null;
+  }
   return new Redis({ url, token });
 }
 
