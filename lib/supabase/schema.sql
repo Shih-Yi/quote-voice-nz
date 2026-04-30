@@ -683,25 +683,6 @@ CREATE POLICY "profiles_update_own"
   WITH CHECK (auth.uid() = id);
 
 -- ============================================
--- PUBLIC VIEW: Safe profile info for customers
--- Excludes sensitive fields like bank_account
--- ============================================
-CREATE OR REPLACE VIEW api.profiles_public AS
-SELECT
-  id,
-  full_name,
-  avatar_url,
-  business_name,
-  phone,
-  email,
-  address
-  -- bank_account is intentionally excluded for privacy
-FROM api.profiles;
-
--- Grant SELECT on the public view
-GRANT SELECT ON api.profiles_public TO anon, authenticated;
-
--- ============================================
 -- FUNCTION: Get public profile by user_id
 -- For displaying business info on shared quotes
 -- ============================================
