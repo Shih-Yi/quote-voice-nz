@@ -32,7 +32,12 @@
       "Read(//Users/sychien/.claude/skills/**)",
       "Read(//Users/sychien/.claude/skills/graphify/**)",
       "Bash(ls app/auth/ app/api/auth/)",
-      "Bash(ls components/auth/)"
+      "Bash(ls components/auth/)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3)",
+      "Bash(rm \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/components/landing/WaitlistForm.tsx\")",
+      "Bash(rm \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/api/waitlist/route.ts\")",
+      "Bash(rmdir \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/api/waitlist\")"
     ]
   }
 }
