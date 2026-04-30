@@ -274,9 +274,9 @@ export async function POST(request: NextRequest) {
     // user_id-preferred rule.
     const { data: existing, error: existingError } = await supabase
       .from("quotes")
-      .select("owner_token_hash, user_id")
+      .select("owner_token_hash, user_id, status")
       .eq("id", body.id)
-      .maybeSingle<OwnershipRow>();
+      .maybeSingle<OwnershipRow & { status: string | null }>();
 
     if (existingError) {
       console.error(
@@ -296,6 +296,27 @@ export async function POST(request: NextRequest) {
           `[/api/quotes] ${op} DENIED id=${body.id} — ownership mismatch (row.user_id=${existing.user_id}, session.user=${user?.id ?? "anon"})`
         );
         return denied;
+      }
+
+      // Status regression guard — once a quote is sent or accepted, never
+      // allow it to be reverted back to draft via a stale client retry.
+      // DELETE has the equivalent guard; POST needs the same to keep the
+      // server as the final authority.
+      const incomingStatus = body.status || "draft";
+      if (
+        (existing.status === "sent" || existing.status === "accepted") &&
+        incomingStatus === "draft"
+      ) {
+        console.warn(
+          `[/api/quotes] ${op} STATUS_REGRESSION_BLOCKED id=${body.id} ${existing.status} -> ${incomingStatus}`
+        );
+        return NextResponse.json(
+          {
+            error: `Cannot revert a ${existing.status} quote back to draft`,
+            status: existing.status,
+          },
+          { status: 409 }
+        );
       }
     }
 

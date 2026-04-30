@@ -30,7 +30,8 @@ function mockChain(finalResult: { data?: unknown; error?: unknown }) {
   const chain = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockResolvedValue(finalResult),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue(finalResult),
   };
   return chain;
 }
@@ -79,6 +80,16 @@ describe("GET /api/quotes/mine", () => {
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(500);
+  });
+
+  it("caps the result set at 500 rows to prevent oversized payloads", async () => {
+    mockGetCurrentUserServer.mockResolvedValueOnce({ id: "user-abc" });
+    const chain = mockChain({ data: [], error: null });
+    mockFrom.mockReturnValueOnce(chain);
+
+    await GET(makeRequest());
+
+    expect(chain.limit).toHaveBeenCalledWith(500);
   });
 
   it("returns empty array when user has no quotes", async () => {

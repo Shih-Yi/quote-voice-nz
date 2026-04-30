@@ -27,6 +27,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Cap so a power user with thousands of historical quotes doesn't ship a
+  // megabytes-large payload on every login / refresh. 500 covers the working
+  // set of even the heaviest Team-tier user (400/month limit) for the past
+  // ~6 weeks. Older quotes still exist in cloud — they're just not pulled
+  // back into IndexedDB on rehydrate. If we ever need to surface the full
+  // history, switch to cursor pagination.
+  const MAX_HYDRATE_ROWS = 500;
+
   try {
     const { data, error } = await supabase
       .from("quotes")
@@ -34,7 +42,8 @@ export async function GET(request: NextRequest) {
         "id, slug, user_id, customer_name, customer_phone, customer_email, customer_address, provider_details, items, notes, gst_inclusive, items_sum, subtotal, gst, total, status, parent_id, version, created_at, updated_at"
       )
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(MAX_HYDRATE_ROWS);
 
     if (error) {
       console.error("[/api/quotes/mine] Select error:", error);

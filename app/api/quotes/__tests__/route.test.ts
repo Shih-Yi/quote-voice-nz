@@ -396,6 +396,87 @@ describe("POST /api/quotes", () => {
       expect(res.status).toBe(403);
     });
   });
+
+  describe("status regression guard", () => {
+    it("returns 409 when trying to revert a sent quote back to draft", async () => {
+      const { createHash } = await import("crypto");
+      const tokenHash = createHash("sha256")
+        .update("dt_test_token")
+        .digest("hex");
+
+      const selectChain = mockChain({
+        data: { owner_token_hash: tokenHash, user_id: null, status: "sent" },
+        error: null,
+      });
+      mockFrom.mockReturnValue(selectChain);
+
+      const req = makeRequest("POST", validPayload({ status: "draft" }));
+      const res = await POST(req);
+
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error).toMatch(/sent/);
+      expect(body.status).toBe("sent");
+    });
+
+    it("returns 409 when trying to revert an accepted quote back to draft", async () => {
+      const { createHash } = await import("crypto");
+      const tokenHash = createHash("sha256")
+        .update("dt_test_token")
+        .digest("hex");
+
+      const selectChain = mockChain({
+        data: { owner_token_hash: tokenHash, user_id: null, status: "accepted" },
+        error: null,
+      });
+      mockFrom.mockReturnValue(selectChain);
+
+      const req = makeRequest("POST", validPayload({ status: "draft" }));
+      const res = await POST(req);
+
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.status).toBe("accepted");
+    });
+
+    it("allows sent -> sent (idempotent re-send) and sent -> accepted", async () => {
+      const { createHash } = await import("crypto");
+      const tokenHash = createHash("sha256")
+        .update("dt_test_token")
+        .digest("hex");
+
+      const selectChain = mockChain({
+        data: { owner_token_hash: tokenHash, user_id: null, status: "sent" },
+        error: null,
+      });
+
+      const upsertChain = {
+        select: vi.fn().mockResolvedValue({
+          data: [
+            { id: "test-id-123", owner_token_hash: tokenHash, user_id: null },
+          ],
+          error: null,
+        }),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        upsert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
+      };
+
+      let callCount = 0;
+      mockFrom.mockImplementation(() => {
+        callCount++;
+        return callCount === 1 ? selectChain : upsertChain;
+      });
+
+      const req = makeRequest("POST", validPayload({ status: "accepted" }));
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+    });
+  });
 });
 
 describe("DELETE /api/quotes", () => {
