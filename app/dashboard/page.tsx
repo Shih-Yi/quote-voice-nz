@@ -63,7 +63,24 @@ export default function Dashboard() {
       });
       refreshPending();
     });
-    return unsubscribe;
+
+    // Refresh after AuthProvider hydrates cloud quotes into IndexedDB
+    // (login on a fresh device, or after local data was cleared).
+    const onQuotesChanged = () => {
+      getRecentQuotes(20).then((quotes) => {
+        setQuoteGroups(groupQuotesByVersion(quotes).slice(0, 5));
+      });
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("ksq:quotes-changed", onQuotesChanged);
+    }
+
+    return () => {
+      unsubscribe();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("ksq:quotes-changed", onQuotesChanged);
+      }
+    };
   }, [refreshPending]);
 
   const handleQuoteCreated = async () => {

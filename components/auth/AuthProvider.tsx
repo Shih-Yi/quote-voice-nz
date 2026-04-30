@@ -33,6 +33,20 @@ import { bindDeviceQuotesToUser } from "@/lib/supabase/quotes-api";
 import { clearAllLocalData } from "@/lib/storage/cleanup";
 import { getSyncQueue } from "@/lib/storage/quotes";
 import { getPendingCount } from "@/lib/storage/pending";
+import { hydrateUserQuotesFromCloud } from "@/lib/storage/hydrate";
+
+// Event fired after IndexedDB is updated from the cloud so list/dashboard
+// pages can re-read local storage without polling.
+export const QUOTES_CHANGED_EVENT = "ksq:quotes-changed";
+
+function emitQuotesChanged() {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new Event(QUOTES_CHANGED_EVENT));
+  } catch {
+    // Non-fatal — older browsers / SSR.
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -77,34 +91,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Bind all device quotes to the user (single device token).
-  // Dedup key is persisted in localStorage so we don't re-bind on every reload.
+  // Pull cloud quotes into IndexedDB. Runs after bind so newly-claimed anon
+  // rows are included, and on boot when a session exists so cleared-local /
+  // cross-device users see their quotes again.
+  const hydrateAndNotify = useCallback(async () => {
+    try {
+      const result = await hydrateUserQuotesFromCloud();
+      if (result.error) {
+        console.warn("[Auth] Hydrate failed:", result.error);
+        return;
+      }
+      if (result.added > 0 || result.updated > 0) {
+        emitQuotesChanged();
+      }
+    } catch (err) {
+      console.error("[Auth] Hydrate exception:", err);
+    }
+  }, []);
+
+  // Bind all device quotes to the user (single device token), then hydrate
+  // the user's full quote list from the cloud into IndexedDB.
+  // Dedup key is persisted in localStorage so we don't re-bind on every reload,
+  // but hydrate still runs because the local copy may be stale or empty.
   // Cleared on SIGNED_OUT / logout so new anon quotes created in a logged-out
   // window can still be claimed by the next sign-in.
   const bindLocalQuotesToUser = useCallback(async (userId: string) => {
     if (typeof window === "undefined") return;
+
+    let alreadyBound = false;
     try {
-      if (window.localStorage.getItem(BOUND_USER_KEY) === userId) return;
+      alreadyBound = window.localStorage.getItem(BOUND_USER_KEY) === userId;
     } catch {
       // localStorage unavailable (private mode) — fall through and bind.
     }
 
-    try {
-      const deviceToken = await getDeviceToken();
-      const result = await bindDeviceQuotesToUser(deviceToken, userId);
-      if (result.error) {
-        console.error("[Auth] Bind error:", result.error);
-        return;
-      }
+    if (!alreadyBound) {
       try {
-        window.localStorage.setItem(BOUND_USER_KEY, userId);
-      } catch {
-        // Non-fatal: bind succeeded, we'll just retry next reload.
+        const deviceToken = await getDeviceToken();
+        const result = await bindDeviceQuotesToUser(deviceToken, userId);
+        if (result.error) {
+          console.error("[Auth] Bind error:", result.error);
+        } else {
+          try {
+            window.localStorage.setItem(BOUND_USER_KEY, userId);
+          } catch {
+            // Non-fatal: bind succeeded, we'll just retry next reload.
+          }
+        }
+      } catch (err) {
+        console.error("[Auth] Failed to bind quotes:", err);
       }
-    } catch (err) {
-      console.error("[Auth] Failed to bind quotes:", err);
     }
-  }, []);
+
+    await hydrateAndNotify();
+  }, [hydrateAndNotify]);
 
   useEffect(() => {
     // Enforce Remember Me: if user opted out and the browser has restarted,
@@ -121,6 +161,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = await getCurrentUser();
       setUser(u);
       setLoading(false);
+      // Already-signed-in session on page load (refresh / reopen): hydrate
+      // cloud quotes into IndexedDB. INITIAL_SESSION won't trigger the bind
+      // path below, so we do it here. Bind itself is skipped — there are no
+      // anonymous-on-this-device quotes to claim on a cold boot.
+      if (u) {
+        hydrateAndNotify();
+      }
     };
     boot();
 
@@ -143,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe?.();
     };
-  }, [bindLocalQuotesToUser]);
+  }, [bindLocalQuotesToUser, hydrateAndNotify]);
 
   const signUp = useCallback(async (
     email: string,

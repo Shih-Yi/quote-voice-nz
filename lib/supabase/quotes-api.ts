@@ -1,4 +1,8 @@
 import type { Quote } from "@/types/quote";
+import {
+  fromSupabaseFormat,
+  type SupabaseQuoteRow,
+} from "@/lib/supabase/quotes";
 
 // Sync quote to Supabase via Next.js API route
 export async function syncQuoteToSupabase(
@@ -68,6 +72,35 @@ export async function deleteQuoteFromSupabase(
     return { success: true };
   } catch {
     return { success: false, error: "Failed to delete from cloud" };
+  }
+}
+
+// Fetch all cloud quotes owned by the current authenticated user (by user_id).
+// Used to rehydrate IndexedDB after login or on a fresh device.
+export async function fetchUserQuotesFromCloud(): Promise<{
+  quotes: Quote[];
+  error: string | null;
+}> {
+  try {
+    const res = await fetch("/api/quotes/mine", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { quotes: [], error: body.error || `HTTP ${res.status}` };
+    }
+
+    const data = await res.json();
+    const rows: SupabaseQuoteRow[] = Array.isArray(data?.quotes)
+      ? data.quotes
+      : [];
+    return { quotes: rows.map(fromSupabaseFormat), error: null };
+  } catch (err) {
+    console.error("Fetch user quotes exception:", err);
+    return { quotes: [], error: "Failed to fetch user quotes" };
   }
 }
 

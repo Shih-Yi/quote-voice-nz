@@ -1,7 +1,7 @@
 import { getSupabase } from "./client";
 import type { Quote, LineItem, UserProfile } from "@/types/quote";
 
-interface SupabaseQuoteRow {
+export interface SupabaseQuoteRow {
   id: string;
   slug: string;
   owner_token_hash: string;
@@ -104,7 +104,7 @@ async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<
 
 
 // Convert Supabase format to local Quote
-function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
+export function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
   return {
     id: row.id,
     slug: row.slug,

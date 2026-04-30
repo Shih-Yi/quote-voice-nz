@@ -32,6 +32,12 @@ export default function QuotesPage() {
 
   useEffect(() => {
     loadQuotes();
+    if (typeof window === "undefined") return;
+    const onChanged = () => {
+      loadQuotes();
+    };
+    window.addEventListener("ksq:quotes-changed", onChanged);
+    return () => window.removeEventListener("ksq:quotes-changed", onChanged);
   }, [loadQuotes]);
 
   // Group and filter quotes
