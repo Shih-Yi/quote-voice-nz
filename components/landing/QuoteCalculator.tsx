@@ -8,7 +8,6 @@ import {
   DollarSign,
   ArrowRight,
   CheckCircle2,
-  Loader2,
   Share2,
   ChevronLeft,
 } from "lucide-react";
@@ -24,7 +23,6 @@ interface CalcInputs {
   quotesPerWeek: number;
   minsPerQuote: number;
   avgJobValue: number;
-  email: string;
 }
 
 interface CalcResults {
@@ -52,7 +50,7 @@ const TRADES: { value: Trade; label: string }[] = [
   { value: "other", label: "Other Trade" },
 ];
 
-const STEP_COUNT = 4;
+const STEP_COUNT = 3;
 
 /* ------------------------------------------------------------------ */
 /*  Calculation                                                        */
@@ -100,15 +98,13 @@ function fmtDollars(n: number): string {
 /* ------------------------------------------------------------------ */
 
 export function QuoteCalculator({ className = "" }: { className?: string }) {
-  const [step, setStep] = useState(0); // 0-3 = inputs, 4 = email gate, 5 = results
+  const [step, setStep] = useState(0); // 0-3 = inputs, 4 = results
   const [inputs, setInputs] = useState<CalcInputs>({
     trade: null,
     quotesPerWeek: 8,
     minsPerQuote: 25,
     avgJobValue: 1500,
-    email: "",
   });
-  const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<CalcResults | null>(null);
 
   const canAdvance = (): boolean => {
@@ -117,42 +113,21 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
       case 1: return inputs.quotesPerWeek >= 1;
       case 2: return inputs.minsPerQuote >= 1;
       case 3: return inputs.avgJobValue >= 1;
-      case 4: return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inputs.email);
       default: return false;
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (!canAdvance()) return;
 
-    if (step < 4) {
+    if (step < 3) {
       setStep(step + 1);
       return;
     }
 
-    // Step 4 → submit email + show results
-    setSubmitting(true);
-    try {
-      await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: inputs.email.trim(),
-          trade: inputs.trade,
-          source: "quote-calculator",
-          meta: {
-            quotesPerWeek: inputs.quotesPerWeek,
-            minsPerQuote: inputs.minsPerQuote,
-            avgJobValue: inputs.avgJobValue,
-          },
-        }),
-      });
-    } catch {
-      // Non-blocking — still show results
-    }
+    // Step 3 → show results
     setResults(calculate(inputs));
-    setStep(5);
-    setSubmitting(false);
+    setStep(4);
   };
 
   const handleShare = async () => {
@@ -168,10 +143,10 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
   };
 
   /* ---- Progress bar ---- */
-  const progressPct = step <= 4 ? ((Math.min(step, 4)) / STEP_COUNT) * 100 : 100;
+  const progressPct = step <= 3 ? ((Math.min(step, 3)) / STEP_COUNT) * 100 : 100;
 
   /* ---- Results screen ---- */
-  if (step === 5 && results) {
+  if (step === 4 && results) {
     return (
       <div className={`bg-white rounded-2xl shadow-lg p-6 md:p-8 ${className}`}>
         <h3 className="text-2xl font-bold text-text mb-6 text-center">Your Quoting Cost</h3>
@@ -337,20 +312,6 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
           </div>
         )}
 
-        {step === 4 && (
-          <div>
-            <h3 className="text-lg font-bold text-text mb-1">Where should we send your results?</h3>
-            <p className="text-sm text-text-muted mb-6">We&apos;ll also save your spot on the early access list.</p>
-            <Input
-              type="email"
-              value={inputs.email}
-              onChange={(e) => setInputs({ ...inputs, email: e.target.value })}
-              placeholder="your@email.co.nz"
-              className="h-14 text-lg rounded-xl mb-2"
-            />
-            <p className="text-xs text-text-muted">No spam. Unsubscribe any time.</p>
-          </div>
-        )}
 
         {/* Navigation */}
         <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-100">
@@ -366,13 +327,11 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
           )}
           <Button
             onClick={handleNext}
-            disabled={!canAdvance() || submitting}
+            disabled={!canAdvance()}
             size="lg"
             className="bg-cta hover:bg-primary-dark text-white rounded-xl font-semibold px-8"
           >
-            {submitting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : step === 4 ? (
+            {step === 3 ? (
               "See My Results"
             ) : (
               <span className="flex items-center gap-2">Next <ArrowRight className="w-4 h-4" /></span>

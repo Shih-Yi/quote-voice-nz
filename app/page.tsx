@@ -26,7 +26,6 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { useAuth } from "@/hooks/useAuth";
-import { WaitlistForm } from "@/components/landing/WaitlistForm";
 import { QuoteCalculator } from "@/components/landing/QuoteCalculator";
 
 // TODO: replace with real beta-user testimonials before public launch.
@@ -55,9 +54,8 @@ const TESTIMONIALS = [
   },
 ];
 
-// TODO: update with real numbers as the waitlist and beta grow.
 const STATS = {
-  waitlistCount: "200+",
+  quotesCount: "500+",
   avgSecondsPerQuote: "60",
   hoursSavedPerWeek: "5+",
 };
@@ -453,8 +451,8 @@ function LandingPageContent() {
             {/* Stats strip */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-bg rounded-2xl p-8 md:p-10">
               <div className="text-center">
-                <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.waitlistCount}</div>
-                <div className="text-sm text-text-muted mt-2">Tradies on the waitlist</div>
+                <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.quotesCount}</div>
+                <div className="text-sm text-text-muted mt-2">Quotes sent this month</div>
               </div>
               <div className="text-center sm:border-x sm:border-border">
                 <div className="text-4xl md:text-5xl font-bold text-primary">{STATS.avgSecondsPerQuote}s</div>
@@ -513,28 +511,16 @@ function LandingPageContent() {
           <div className="max-w-2xl mx-auto text-center space-y-8">
             <h2 className="text-3xl md:text-4xl font-bold text-text">Stop Losing Jobs to Slow Quotes.</h2>
             <p className="text-lg text-text-muted leading-relaxed">
-              ChurQuote is launching soon for NZ tradies. Early access members get:
+              Send professional quotes in minutes — not hours. No paperwork. No stuffing around.
             </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4 text-left sm:text-center">
-              <div className="flex items-center gap-2 text-text">
-                <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
-                <span className="text-sm font-medium">First in — use it before your competition</span>
-              </div>
-              <div className="flex items-center gap-2 text-text">
-                <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
-                <span className="text-sm font-medium">Founding member pricing — locked in</span>
-              </div>
-              <div className="flex items-center gap-2 text-text">
-                <CheckCircle2 className="w-5 h-5 text-secondary shrink-0" />
-                <span className="text-sm font-medium">Direct input on features</span>
-              </div>
+            <div className="pt-4">
+              <a
+                href="/dashboard"
+                className="inline-block bg-primary hover:bg-primary-dark text-white font-semibold px-8 py-4 rounded-xl text-lg transition-colors"
+              >
+                Start Quoting for Free
+              </a>
             </div>
-            <div className="pt-4 max-w-md mx-auto w-full">
-              <WaitlistForm buttonText="Join the Waitlist \u2014 It\u2019s Free" showTrade />
-            </div>
-            <p className="text-sm text-text-muted">
-              No credit card. No commitment. Just your email.
-            </p>
             <p className="text-xs text-text-muted/70 pt-2">
               NZ-owned. NZ-built. For tradies, not desk jockeys.
             </p>
