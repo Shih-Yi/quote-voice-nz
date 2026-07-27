@@ -338,7 +338,7 @@ describe("POST /api/transcribe", () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    it("logged-in: monthly under-limit + daily under-limit → transcribes and atomically increments", async () => {
+    it("logged-in: monthly under-limit + daily under-limit → transcribes", async () => {
       mockGetCurrentUserServer.mockResolvedValueOnce({
         id: "user-1",
         email: "u@example.com",
@@ -355,11 +355,29 @@ describe("POST /api/transcribe", () => {
       );
 
       expect(response.status).toBe(200);
-      // Atomic post-success increment
-      expect(mockCheckAndIncrementUsage).toHaveBeenCalledWith(
-        "user-1",
-        "quotes_created"
+    });
+
+    it("does NOT increment quotes_created — /api/quotes owns that counter", async () => {
+      // Counting here would double-charge the voice flow (transcribe + the
+      // quote row it produces) and would still miss manually-typed quotes,
+      // which never reach this route.
+      mockGetCurrentUserServer.mockResolvedValueOnce({
+        id: "user-1",
+        email: "u@example.com",
+      });
+      mockGetUserTier.mockResolvedValueOnce("free");
+      mockGetMonthlyUsage.mockResolvedValueOnce({
+        quotesCreated: 2,
+        emailsSent: 0,
+      });
+      mockCreate.mockResolvedValueOnce({ text: "kitchen tap" });
+
+      const response = await POST(
+        makeRequest(makeFormData(makeAudioFile())) as never
       );
+
+      expect(response.status).toBe(200);
+      expect(mockCheckAndIncrementUsage).not.toHaveBeenCalled();
     });
   });
 });

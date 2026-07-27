@@ -23,6 +23,8 @@ import {
   getPendingCount,
   clearAllPending,
   getAudioBlob,
+  replacePendingAudioBlob,
+  audioExtension,
 } from "../pending";
 
 function makePendingAudio(id: string): PendingAudio {
@@ -133,6 +135,43 @@ describe("pending audio storage", () => {
 
     it("returns undefined for non-existent item", async () => {
       expect(await getAudioBlob("nonexistent")).toBeUndefined();
+    });
+  });
+
+  describe("replacePendingAudioBlob", () => {
+    it("swaps in the compressed blob so retries upload fewer bytes", async () => {
+      await addPendingAudio(makePendingAudio("p1"));
+      const mp3 = new Blob(["mp3"], { type: "audio/mpeg" });
+
+      await replacePendingAudioBlob("p1", mp3);
+
+      const stored = await getPendingAudio();
+      expect(stored[0].blob.type).toBe("audio/mpeg");
+      // Everything else about the queue entry is untouched.
+      expect(stored[0].id).toBe("p1");
+      expect(stored[0].retryCount).toBe(0);
+    });
+
+    it("is a no-op for an unknown id", async () => {
+      await addPendingAudio(makePendingAudio("p1"));
+
+      await replacePendingAudioBlob("nope", new Blob(["x"], { type: "audio/mpeg" }));
+
+      const stored = await getPendingAudio();
+      expect(stored).toHaveLength(1);
+      expect(stored[0].blob.type).toBe("audio/webm");
+    });
+  });
+
+  describe("audioExtension", () => {
+    it("maps blob types to the extension Whisper expects", () => {
+      expect(audioExtension(new Blob([], { type: "audio/mpeg" }))).toBe("mp3");
+      expect(audioExtension(new Blob([], { type: "audio/mp4" }))).toBe("mp4");
+      expect(audioExtension(new Blob([], { type: "audio/webm" }))).toBe("webm");
+    });
+
+    it("falls back to webm for an unknown type", () => {
+      expect(audioExtension(new Blob([], { type: "" }))).toBe("webm");
     });
   });
 });

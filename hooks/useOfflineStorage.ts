@@ -5,6 +5,7 @@ import {
   getPendingAudio,
   removePendingAudio,
   getStalePendingAudio,
+  audioExtension,
   type StalePendingAudioState,
 } from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
@@ -68,7 +69,7 @@ export function useOfflineStorage(): UseOfflineStorageResult {
   const syncSingle = useCallback(async (item: PendingAudio): Promise<{ success: boolean; error?: string }> => {
     try {
       const formData = new FormData();
-      formData.append("audio", item.blob, "recording.webm");
+      formData.append("audio", item.blob, `recording.${audioExtension(item.blob)}`);
 
       const deviceToken = await getDeviceToken();
       const transcribeRes = await fetch("/api/transcribe", {
@@ -112,7 +113,11 @@ export function useOfflineStorage(): UseOfflineStorageResult {
 
       const extraction: ExtractionResult = await extractRes.json();
 
-      const quoteId = uuidv4();
+      // Reuse the pending item's id as the quote id so this replay is
+      // idempotent: saveQuote upserts by id, so if we succeed here but the
+      // removePendingAudio below fails, the next pass overwrites the same
+      // quote instead of creating a duplicate draft.
+      const quoteId = item.id;
       const slug = await generateSlug();
 
       const items = extraction.items.map((i) => ({
@@ -232,12 +237,7 @@ export function useOfflineStorage(): UseOfflineStorageResult {
         a.href = url;
         const date = item.createdAt.slice(0, 10);
         const shortId = item.id.slice(0, 8);
-        const ext = item.blob.type.includes("mp4")
-          ? "mp4"
-          : item.blob.type.includes("mpeg")
-          ? "mp3"
-          : "webm";
-        a.download = `ksq-recording-${date}-${shortId}.${ext}`;
+        a.download = `ksq-recording-${date}-${shortId}.${audioExtension(item.blob)}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

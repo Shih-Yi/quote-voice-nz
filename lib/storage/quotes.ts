@@ -176,6 +176,20 @@ export async function syncPendingDeletions(): Promise<{
   return { deleted, failed, skipped, gaveUp };
 }
 
+// Internal: clear a tombstone, bringing the quote back into UI lists. Used
+// when the cloud permanently refuses the deletion — the row still exists
+// server-side, so pretending it's gone locally would mislead the user.
+async function restoreTombstonedQuote(id: string): Promise<void> {
+  const quotes = await getAllQuotesRaw();
+  const index = quotes.findIndex((q) => q.id === id);
+  if (index < 0 || !quotes[index].deletedAt) return;
+
+  await set(
+    QUOTES_KEY,
+    quotes.map((q, i) => (i === index ? { ...q, deletedAt: undefined } : q))
+  );
+}
+
 // Retry all queued quotes — call this on app launch or when coming online
 // Skipped IDs are in their backoff window; gaveUp IDs hit MAX_RETRY_ATTEMPTS
 // (quote stays local, dropped from auto-retry — re-saving re-queues).
@@ -224,7 +238,11 @@ export async function syncPendingQuotes(): Promise<{
     if (result.success) {
       await removeFromSyncQueue(quoteId);
       await clearRetryState(SYNC_FAILURES_KEY, quoteId);
-      await markQuoteCloudSynced(quoteId, result.slug);
+      await markQuoteCloudSynced(quoteId, {
+        slug: result.slug,
+        serverUpdatedAt: result.updatedAt,
+        syncedUpdatedAt: quote.updatedAt,
+      });
       synced++;
     } else if (result.retryable === false) {
       // Permanent rejection (403 ownership, 409 status conflict, 400 bad
@@ -264,38 +282,45 @@ async function purgeLocalQuote(id: string): Promise<void> {
   await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
 }
 
-// Internal: record that this quote reached the cloud, and adopt any slug the
-// server resolved for us (collision handling). `cloudSyncedAt` is what lets
-// deleteQuote tell "never uploaded" (safe to purge locally) apart from
-// "uploaded, then edited offline" (a cloud row exists and must be deleted
-// server-side, or we leave an orphan that hydrate would resurrect).
-async function markQuoteCloudSynced(id: string, serverSlug?: string): Promise<void> {
+// Internal: record that this quote reached the cloud, and adopt what the
+// server considers authoritative — the slug (it resolves collisions) and
+// updated_at (it stamps its own on every upsert).
+//
+// `cloudSyncedAt` is what lets deleteQuote tell "never uploaded" (safe to
+// purge locally) apart from "uploaded, then edited offline" (a cloud row
+// exists and must be deleted server-side, or we leave an orphan that hydrate
+// would resurrect).
+//
+// Adopting updated_at matters for merge precedence: the server always writes
+// its own timestamp, so a local copy keeping its client-generated one would
+// look permanently older and lose every subsequent hydrate comparison.
+// `syncedUpdatedAt` guards the race where the user edited the quote while the
+// request was in flight — in that case the local row is genuinely newer and
+// its timestamp must stand.
+async function markQuoteCloudSynced(
+  id: string,
+  options: { slug?: string; serverUpdatedAt?: string; syncedUpdatedAt?: string } = {}
+): Promise<void> {
   const quotes = await getAllQuotesRaw();
   const index = quotes.findIndex((q) => q.id === id);
   if (index < 0) return;
 
   const current = quotes[index];
-  const slug = serverSlug && serverSlug !== current.slug ? serverSlug : current.slug;
+  const slug = options.slug && options.slug !== current.slug ? options.slug : current.slug;
+  const unchangedDuringFlight =
+    !options.syncedUpdatedAt || current.updatedAt === options.syncedUpdatedAt;
+  const updatedAt =
+    options.serverUpdatedAt && unchangedDuringFlight
+      ? options.serverUpdatedAt
+      : current.updatedAt;
 
   await set(
     QUOTES_KEY,
     quotes.map((q, i) =>
-      i === index ? { ...q, slug, cloudSyncedAt: new Date().toISOString() } : q
+      i === index
+        ? { ...q, slug, updatedAt, cloudSyncedAt: new Date().toISOString() }
+        : q
     )
-  );
-}
-
-// Internal: clear a tombstone, bringing the quote back into UI lists. Used
-// when the cloud permanently refuses the deletion — the row still exists
-// server-side, so pretending it's gone locally would mislead the user.
-async function restoreTombstonedQuote(id: string): Promise<void> {
-  const quotes = await getAllQuotesRaw();
-  const index = quotes.findIndex((q) => q.id === id);
-  if (index < 0 || !quotes[index].deletedAt) return;
-
-  await set(
-    QUOTES_KEY,
-    quotes.map((q, i) => (i === index ? { ...q, deletedAt: undefined } : q))
   );
 }
 
@@ -438,8 +463,12 @@ export async function saveQuote(
   if (result.success) {
     await removeFromSyncQueue(updatedQuote.id);
     await clearRetryState(SYNC_FAILURES_KEY, updatedQuote.id);
-    // Records cloudSyncedAt and adopts any slug the server resolved for us.
-    await markQuoteCloudSynced(updatedQuote.id, result.slug);
+    // Records cloudSyncedAt and adopts the server's slug / updated_at.
+    await markQuoteCloudSynced(updatedQuote.id, {
+      slug: result.slug,
+      serverUpdatedAt: result.updatedAt,
+      syncedUpdatedAt: updatedQuote.updatedAt,
+    });
     return { synced: true, slug: result.slug || updatedQuote.slug };
   }
 
@@ -496,7 +525,11 @@ export async function updateQuote(
     if (result.success) {
       await removeFromSyncQueue(quote.id);
       await clearRetryState(SYNC_FAILURES_KEY, quote.id);
-      await markQuoteCloudSynced(quote.id, result.slug);
+      await markQuoteCloudSynced(quote.id, {
+        slug: result.slug,
+        serverUpdatedAt: result.updatedAt,
+        syncedUpdatedAt: updatedQuote.updatedAt,
+      });
     } else if (result.retryable === false) {
       console.error(
         `[updateQuote] PERMANENT FAILURE id=${quote.id} status=${result.status} — ${result.error}`
@@ -548,7 +581,11 @@ export async function markQuoteAsSent(
   if (result.success) {
     await removeFromSyncQueue(quoteId);
     await clearRetryState(SYNC_FAILURES_KEY, quoteId);
-    await markQuoteCloudSynced(quoteId, result.slug);
+    await markQuoteCloudSynced(quoteId, {
+      slug: result.slug,
+      serverUpdatedAt: result.updatedAt,
+      syncedUpdatedAt: updatedQuote.updatedAt,
+    });
   } else if (result.retryable === false) {
     console.error(
       `[markQuoteAsSent] PERMANENT FAILURE id=${quoteId} status=${result.status} — ${result.error}`

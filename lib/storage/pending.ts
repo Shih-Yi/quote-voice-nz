@@ -61,6 +61,34 @@ export async function updatePendingAudioRetry(id: string): Promise<void> {
   await set(PENDING_KEY, updated);
 }
 
+// Swap the stored blob for a smaller/compressed version of the same recording.
+// The queued copy is written before compression runs (so nothing is lost if
+// compression throws), which means retries would otherwise re-upload the raw
+// recording — roughly 10x the bytes over a rural mobile connection.
+export async function replacePendingAudioBlob(
+  id: string,
+  blob: Blob
+): Promise<void> {
+  if (blob.size > MAX_AUDIO_BYTES) return;
+
+  const pending = await getPendingAudio();
+  if (!pending.some((p) => p.id === id)) return;
+
+  await set(
+    PENDING_KEY,
+    pending.map((p) => (p.id === id ? { ...p, blob } : p))
+  );
+}
+
+// Filename extension Groq/Whisper should see for a stored recording. The
+// server infers the audio format from the filename, so a compressed MP3 sent
+// as "recording.webm" can be rejected or mis-decoded.
+export function audioExtension(blob: Blob): string {
+  if (blob.type.includes("mpeg") || blob.type.includes("mp3")) return "mp3";
+  if (blob.type.includes("mp4")) return "mp4";
+  return "webm";
+}
+
 export async function getPendingCount(): Promise<number> {
   const pending = await getPendingAudio();
   return pending.length;

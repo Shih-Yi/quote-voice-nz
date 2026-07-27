@@ -3,7 +3,6 @@ import Groq from "groq-sdk";
 import { rateLimit } from "@/lib/rateLimit";
 import { captureError } from "@/lib/sentry";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
-import { checkAndIncrementUsage } from "@/lib/supabase/subscription";
 import {
   checkGlobalTranscribeCap,
   checkAnonDeviceQuota,
@@ -160,14 +159,12 @@ export async function POST(request: NextRequest) {
         "Use New Zealand English spelling: labour, colour, centre, metre, organised, specialised. This is a quote for trade work in New Zealand.",
     });
 
-    if (user) {
-      const quotaResult = await checkAndIncrementUsage(user.id, "quotes_created");
-      if (!quotaResult.allowed) {
-        // Edge case: another request consumed the final quota between our
-        // pre-check and here. Groq already ran — return the transcript rather
-        // than waste the work.
-      }
-    }
+    // NOTE: the monthly quotes_created counter is deliberately NOT incremented
+    // here. /api/quotes owns it, incrementing once per new quote row, so that
+    // manually-typed quotes count against the plan too — they never touch this
+    // route. Counting in both places would double-charge the voice flow.
+    // Groq spend stays bounded by the global cap, the anon device/IP caps and
+    // the per-user daily quota consumed above.
 
     return NextResponse.json({ text: transcription.text });
   } catch (error) {

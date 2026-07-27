@@ -5,6 +5,7 @@ import { claimIdempotencyKey } from "@/lib/idempotency";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
 import {
+  checkAndIncrementUsage,
   getMonthlyUsage,
   getUserTier,
   TIER_LIMITS,
@@ -236,9 +237,9 @@ export async function POST(request: NextRequest) {
     if (!isFirstCall) {
       const { data: cachedRow, error: cachedRowError } = await supabase
         .from("quotes")
-        .select("slug, owner_token_hash, user_id")
+        .select("slug, owner_token_hash, user_id, updated_at")
         .eq("id", body.id)
-        .maybeSingle<OwnershipRow & { slug: string }>();
+        .maybeSingle<OwnershipRow & { slug: string; updated_at: string }>();
       if (cachedRowError) {
         console.error(
           `[/api/quotes] ${op} IDEMPOTENT_LOOKUP_ERROR id=${body.id}`,
@@ -263,6 +264,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           slug: cachedRow.slug,
+          updatedAt: cachedRow.updated_at,
           cached: true,
         });
       }
@@ -320,10 +322,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Server-side quota gate for logged-in free-tier users on NEW quote rows.
-    // Catches paths that bypass /api/transcribe (e.g. manual-entry quotes
-    // synced from offline). Check-only — transcribe still owns increments to
-    // avoid double-counting the common voice flow.
+    // Server-side quota gate for logged-in users on NEW quote rows. This route
+    // is the single accounting point for quotes_created: every quote reaches
+    // it exactly once regardless of how it was authored, so voice and
+    // manually-typed quotes both count and neither counts twice. Checked here
+    // before the write, incremented after it succeeds.
     if (user && !existing) {
       const tier = await getUserTier(user.id);
       const limits = TIER_LIMITS[tier];
@@ -384,7 +387,12 @@ export async function POST(request: NextRequest) {
     // ownership mismatch — protects against a race where someone inserted a row
     // with our id between our SELECT and UPSERT.
     let upsertResult:
-      | { id: string; owner_token_hash: string; user_id: string | null }[]
+      | {
+          id: string;
+          owner_token_hash: string;
+          user_id: string | null;
+          updated_at: string;
+        }[]
       | null = null;
     let lastError: { message?: string; code?: string } | null = null;
 
@@ -392,7 +400,7 @@ export async function POST(request: NextRequest) {
       const { data: result, error } = await supabase
         .from("quotes")
         .upsert(upsertData, { onConflict: "id" })
-        .select("id, owner_token_hash, user_id");
+        .select("id, owner_token_hash, user_id, updated_at");
 
       if (!error) {
         upsertResult = result;
@@ -455,9 +463,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Count the quote now that the row is committed. Only on creation — an
+    // edit re-POSTs the same id and must not consume a second credit.
+    if (user && !existing) {
+      const counted = await checkAndIncrementUsage(user.id, "quotes_created");
+      if (!counted.allowed) {
+        // Another request took the last credit between our pre-check and here.
+        // The row is already written; log it rather than orphan the user's work.
+        console.warn(
+          `[/api/quotes] ${op} QUOTA_RACE id=${body.id} user=${user.id} — row saved past limit ${counted.limit}`
+        );
+      }
+    }
+
     console.log(`[/api/quotes] ${op} ${action} OK id=${body.id} slug=${upsertData.slug} items_sum=${itemsSum}`);
     // Return the final slug (may differ from request if collision was resolved)
-    return NextResponse.json({ success: true, slug: upsertData.slug });
+    // and the authoritative updated_at. The client adopts the timestamp so its
+    // local copy stops looking permanently older than the cloud row — without
+    // it, every hydrate would treat the cloud snapshot as newer and overwrite
+    // local state on each page load.
+    return NextResponse.json({
+      success: true,
+      slug: upsertData.slug,
+      updatedAt: upsertResult[0].updated_at,
+    });
   } catch (err) {
     console.error("[/api/quotes] POST exception:", err);
     return NextResponse.json(

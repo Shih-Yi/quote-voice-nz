@@ -7,7 +7,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { RecordingStatus } from "./RecordingStatus";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import { addPendingAudio, removePendingAudio } from "@/lib/storage/pending";
+import {
+  addPendingAudio,
+  audioExtension,
+  removePendingAudio,
+  replacePendingAudioBlob,
+} from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { emit, KSQ_EVENTS } from "@/lib/events";
@@ -40,7 +45,12 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
   const processAudio = useCallback(
     async (blob: Blob) => {
       const createdAt = new Date().toISOString();
+      // One id for both the queued recording and the quote it becomes. If this
+      // run dies after the quote is saved but before the queue entry is
+      // removed, a later replay (useOfflineStorage.syncSingle) upserts the same
+      // quote id rather than creating a duplicate draft.
       const pendingId = uuidv4();
+      let compressed: Blob | null = null;
 
       // Offline-first: persist the recording BEFORE any network call. When
       // the device is fully offline, fetch() rejects without ever producing
@@ -69,13 +79,13 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
 
         // Compress to MP3 before upload (saves bandwidth on mobile)
         const mp3Blob = await compressToMp3(blob);
+        compressed = mp3Blob;
 
         setProcessingStatus("Transcribing audio...");
 
         // Try to transcribe
         const formData = new FormData();
-        const isMp3 = mp3Blob.type === "audio/mpeg";
-        formData.append("audio", mp3Blob, isMp3 ? "recording.mp3" : "recording.webm");
+        formData.append("audio", mp3Blob, `recording.${audioExtension(mp3Blob)}`);
 
         const deviceToken = await getDeviceToken();
         const transcribeRes = await fetch("/api/transcribe", {
@@ -129,7 +139,6 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         const extraction: ExtractionResult = await extractRes.json();
 
         // Create quote object
-        const quoteId = uuidv4();
         const slug = await generateSlug();
 
         const items = extraction.items.map((item) => ({
@@ -143,7 +152,7 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         const { subtotal, gst, total } = calculateQuoteTotals(items, false);
 
         const quote: Quote = {
-          id: quoteId,
+          id: pendingId,
           customerName: extraction.customerName || "Customer",
           customerPhone: extraction.customerPhone ?? undefined,
           customerEmail: extraction.customerEmail ?? undefined,
@@ -184,11 +193,18 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         }
 
         onQuoteCreated?.(quote);
-        router.push(`/quote/${quoteId}`);
+        router.push(`/quote/${pendingId}`);
       } catch (err) {
         console.error("Processing error:", err);
         setIsProcessing(false);
         setProcessingStatus("");
+
+        // The queued copy is the raw recording (persisted before compression
+        // ran). Now that we know compression worked and the upload didn't,
+        // swap in the smaller file so the retry doesn't re-send the original.
+        if (persisted && compressed && compressed.size < blob.size) {
+          await replacePendingAudioBlob(pendingId, compressed).catch(() => {});
+        }
 
         if (err instanceof Error && err.message === "No speech detected") {
           // Unrecoverable — keeping silent audio queued would just fail again.

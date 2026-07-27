@@ -10,6 +10,12 @@ const APP_LOCAL_STORAGE_KEYS = [
   "ksq:session_active",
 ];
 
+// Service worker cache holding per-user page responses (dashboard HTML,
+// visited /q/<slug> pages). The shell cache is deliberately left alone — it
+// only holds /offline and the manifest, and install() won't re-populate it
+// until the next deploy.
+const DYNAMIC_CACHE_PREFIX = "ksq-dynamic-";
+
 // Wipe all client-side app state. Called on sign-out so the next user on the
 // same device starts fresh and can't see the previous user's local quotes.
 //
@@ -18,6 +24,7 @@ const APP_LOCAL_STORAGE_KEYS = [
 //     token — the token is intentionally cleared so getDeviceToken() will
 //     mint a fresh one on next call, preventing cloud access bleed-through)
 //   - Known localStorage keys
+//   - Service worker dynamic cache (previously-rendered pages)
 export async function clearAllLocalData(): Promise<void> {
   try {
     await clear();
@@ -34,5 +41,18 @@ export async function clearAllLocalData(): Promise<void> {
     }
   } catch (err) {
     console.error("[clearAllLocalData] localStorage clear failed:", err);
+  }
+
+  try {
+    if (typeof caches !== "undefined") {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith(DYNAMIC_CACHE_PREFIX))
+          .map((key) => caches.delete(key))
+      );
+    }
+  } catch (err) {
+    console.error("[clearAllLocalData] Cache clear failed:", err);
   }
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import { createHash as nodeCreateHash } from "crypto";
 
 // --- Mock Supabase server client ---
 const mockFrom = vi.fn();
@@ -21,6 +22,32 @@ vi.mock("@/lib/rateLimit", () => ({
 const mockClaimIdempotencyKey = vi.fn().mockResolvedValue(true);
 vi.mock("@/lib/idempotency", () => ({
   claimIdempotencyKey: (...a: unknown[]) => mockClaimIdempotencyKey(...a),
+}));
+
+// --- Mock auth (anonymous by default; override per test) ---
+const mockGetCurrentUserServer = vi.fn().mockResolvedValue(null);
+vi.mock("@/lib/supabase/auth-server", () => ({
+  getCurrentUserServer: () => mockGetCurrentUserServer(),
+}));
+
+// --- Mock subscription/quota ---
+const mockCheckAndIncrementUsage = vi
+  .fn()
+  .mockResolvedValue({ allowed: true, limit: 5, used: 1 });
+const mockGetMonthlyUsage = vi
+  .fn()
+  .mockResolvedValue({ quotesCreated: 0, emailsSent: 0 });
+const mockGetUserTier = vi.fn().mockResolvedValue("free");
+
+vi.mock("@/lib/supabase/subscription", () => ({
+  checkAndIncrementUsage: (...a: unknown[]) => mockCheckAndIncrementUsage(...a),
+  getMonthlyUsage: (...a: unknown[]) => mockGetMonthlyUsage(...a),
+  getUserTier: (...a: unknown[]) => mockGetUserTier(...a),
+  TIER_LIMITS: {
+    free: { quotesPerMonth: 5, quotesPerDay: 3, emailsPerMonth: 3, templates: 3, attachmentsPerQuote: 3, versions: 2 },
+    pro: { quotesPerMonth: 200, quotesPerDay: 10, emailsPerMonth: 50, templates: 50, attachmentsPerQuote: 20, versions: 10 },
+    team: { quotesPerMonth: 400, quotesPerDay: 20, emailsPerMonth: 200, templates: 100, attachmentsPerQuote: 20, versions: 20 },
+  },
 }));
 
 import { POST, DELETE } from "../route";
@@ -68,6 +95,10 @@ describe("POST /api/quotes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockClaimIdempotencyKey.mockResolvedValue(true);
+    mockGetCurrentUserServer.mockResolvedValue(null);
+    mockGetMonthlyUsage.mockResolvedValue({ quotesCreated: 0, emailsSent: 0 });
+    mockGetUserTier.mockResolvedValue("free");
+    mockCheckAndIncrementUsage.mockResolvedValue({ allowed: true, limit: 5, used: 1 });
   });
 
   it("returns 400 when id is missing", async () => {
@@ -247,6 +278,104 @@ describe("POST /api/quotes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+
+  // ─── Quota accounting (audit low #5) ──────────────────
+
+  describe("quota accounting", () => {
+    const tokenHash = nodeCreateHash("sha256")
+      .update("dt_test_token")
+      .digest("hex");
+
+    // `ownerUserId` must mirror the session user — the post-upsert ownership
+    // check compares the written row against the caller.
+    function mockInsertFlow(
+      existing: Record<string, unknown> | null,
+      ownerUserId: string | null = "user-1"
+    ) {
+      const selectChain = mockChain({ data: existing, error: null });
+      const upsertChain = {
+        select: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "test-id-123",
+              owner_token_hash: tokenHash,
+              user_id: ownerUserId,
+              updated_at: "2026-07-27T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        }),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        upsert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
+      };
+
+      let callCount = 0;
+      mockFrom.mockImplementation(() => {
+        callCount++;
+        return callCount === 1 ? selectChain : upsertChain;
+      });
+    }
+
+    it("counts a new quote for a logged-in user, whatever created it", async () => {
+      mockGetCurrentUserServer.mockResolvedValue({ id: "user-1" });
+      mockInsertFlow(null);
+
+      const res = await POST(makeRequest("POST", validPayload()));
+
+      expect(res.status).toBe(200);
+      expect(mockCheckAndIncrementUsage).toHaveBeenCalledWith(
+        "user-1",
+        "quotes_created"
+      );
+    });
+
+    it("does not count an edit to an existing quote", async () => {
+      mockGetCurrentUserServer.mockResolvedValue({ id: "user-1" });
+      mockInsertFlow({ owner_token_hash: tokenHash, user_id: "user-1", status: "draft" });
+
+      const res = await POST(makeRequest("POST", validPayload()));
+
+      expect(res.status).toBe(200);
+      expect(mockCheckAndIncrementUsage).not.toHaveBeenCalled();
+    });
+
+    it("does not count anonymous quotes — they have no usage row", async () => {
+      mockGetCurrentUserServer.mockResolvedValue(null);
+      mockInsertFlow(null, null);
+
+      const res = await POST(makeRequest("POST", validPayload()));
+
+      expect(res.status).toBe(200);
+      expect(mockCheckAndIncrementUsage).not.toHaveBeenCalled();
+    });
+
+    it("rejects with 429 quota_exceeded before writing when the plan is used up", async () => {
+      mockGetCurrentUserServer.mockResolvedValue({ id: "user-1" });
+      mockGetMonthlyUsage.mockResolvedValue({ quotesCreated: 5, emailsSent: 0 });
+      mockInsertFlow(null);
+
+      const res = await POST(makeRequest("POST", validPayload()));
+
+      expect(res.status).toBe(429);
+      const body = await res.json();
+      expect(body.error).toBe("quota_exceeded");
+      expect(mockCheckAndIncrementUsage).not.toHaveBeenCalled();
+    });
+
+    it("returns the server's authoritative updatedAt so local copies can match", async () => {
+      mockGetCurrentUserServer.mockResolvedValue({ id: "user-1" });
+      mockInsertFlow(null);
+
+      const res = await POST(makeRequest("POST", validPayload()));
+      const body = await res.json();
+
+      expect(body.updatedAt).toBe("2026-07-27T00:00:00.000Z");
+    });
   });
 
   it("updates an existing quote with matching token", async () => {

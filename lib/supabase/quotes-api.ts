@@ -16,13 +16,22 @@ export interface CloudWriteResult {
    */
   retryable?: boolean;
   slug?: string;
+  /** Authoritative updated_at from the DB row, echoed back by the server. */
+  updatedAt?: string;
 }
 
 // Whether an HTTP failure is worth retrying. 5xx are server-side blips;
 // 408 (request timeout) and 429 (rate limited) are transient by definition.
 // Every other 4xx means the request itself is wrong and will stay wrong.
-function isRetryableStatus(status: number): boolean {
-  if (status === 408 || status === 429) return true;
+//
+// `errorCode` disambiguates 429: burst rate limiting clears in seconds, but a
+// plan quota being exhausted does not clear until the next billing month —
+// retrying that on a backoff schedule would spin until it gave up anyway.
+function isRetryableStatus(status: number, errorCode?: string): boolean {
+  if (status === 429) {
+    return errorCode !== "quota_exceeded" && errorCode !== "daily_quota_exceeded";
+  }
+  if (status === 408) return true;
   return status >= 500;
 }
 
@@ -66,13 +75,14 @@ export async function syncQuoteToSupabase(
         success: false,
         error: body.error || `HTTP ${res.status}`,
         status: res.status,
-        retryable: isRetryableStatus(res.status),
+        retryable: isRetryableStatus(res.status, body.error),
       };
     }
 
     const data = await res.json().catch(() => ({}));
-    // Server may resolve slug collisions — return the final slug
-    return { success: true, slug: data.slug };
+    // Server may resolve slug collisions — return the final slug, plus the
+    // row's authoritative updated_at so the local copy can match it.
+    return { success: true, slug: data.slug, updatedAt: data.updatedAt };
   } catch (err) {
     // Network-level failure (offline, DNS, aborted) — always worth retrying.
     console.error("Supabase sync exception:", err);
@@ -105,7 +115,7 @@ export async function deleteQuoteFromSupabase(
         success: false,
         error: body.error || `HTTP ${res.status}`,
         status: res.status,
-        retryable: isRetryableStatus(res.status),
+        retryable: isRetryableStatus(res.status, body.error),
       };
     }
 
