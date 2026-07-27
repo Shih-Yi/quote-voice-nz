@@ -6,6 +6,10 @@
 export const KSQ_EVENTS = {
   AUTH_REQUIRED: "ksq:auth-required",
   PENDING_SYNCED: "ksq:pending-synced",
+  // Fired after IndexedDB quote data changed outside normal page flows
+  // (cloud hydrate, background queue flush) so lists can re-read storage.
+  // Same event name AuthProvider dispatches as QUOTES_CHANGED_EVENT.
+  QUOTES_CHANGED: "ksq:quotes-changed",
 } as const;
 
 export type KsqEventName = (typeof KSQ_EVENTS)[keyof typeof KSQ_EVENTS];

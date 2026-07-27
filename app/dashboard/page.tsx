@@ -18,6 +18,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { getRecentQuotes, saveQuote, generateSlug } from "@/lib/storage/quotes";
+import {
+  flushQuoteQueues,
+  flushChangedAnything,
+} from "@/lib/storage/backgroundSync";
 import { useOfflineStorage } from "@/hooks/useOfflineStorage";
 import { QuoteListItem } from "@/components/quote/QuoteListItem";
 import { groupQuotesByVersion, type QuoteGroup } from "@/lib/utils/quoteVersions";
@@ -93,6 +97,17 @@ export default function Dashboard() {
   const handleSync = async () => {
     toast.info("Syncing pending quotes...");
     const { successCount, failCount, unrecoverableIds, lastError } = await syncAll();
+
+    // Also flush queued cloud retries (failed quote syncs / deletions) so
+    // "Sync All" covers everything pending, not just un-transcribed audio.
+    const queueResult = await flushQuoteQueues();
+    if (flushChangedAnything(queueResult)) {
+      const cloudCount =
+        (queueResult?.quotes.synced ?? 0) + (queueResult?.deletions.deleted ?? 0);
+      toast.success(
+        `Pushed ${cloudCount} queued ${cloudCount === 1 ? "change" : "changes"} to the cloud`
+      );
+    }
 
     const quotes = await getRecentQuotes(20);
     const groups = groupQuotesByVersion(quotes);

@@ -91,6 +91,46 @@ describe("hydrateUserQuotesFromCloud", () => {
     expect(stored[0].customerName).toBe("Cloud Fresh");
   });
 
+  it("preserves local-only fields when cloud wins (attachments never sync)", async () => {
+    const local = makeQuote({
+      id: "q1",
+      customerName: "Local Stale",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      attachments: [
+        {
+          id: "att-1",
+          name: "site-photo.jpg",
+          dataUrl: "data:image/jpeg;base64,abc",
+          mimeType: "image/jpeg",
+          size: 1234,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      signatureDataUrl: "data:image/png;base64,sig",
+      ownerToken: "secret-token",
+    });
+    const cloud = makeQuote({
+      id: "q1",
+      customerName: "Cloud Fresh",
+      updatedAt: "2026-02-01T00:00:00.000Z",
+    });
+    mockStore.set(QUOTES_KEY, [local]);
+    mockFetchUserQuotesFromCloud.mockResolvedValueOnce({
+      quotes: [cloud],
+      error: null,
+    });
+
+    const result = await hydrateUserQuotesFromCloud();
+
+    expect(result.updated).toBe(1);
+    const stored = mockStore.get(QUOTES_KEY) as Quote[];
+    expect(stored[0].customerName).toBe("Cloud Fresh");
+    expect(stored[0].attachments).toHaveLength(1);
+    expect(stored[0].attachments?.[0].id).toBe("att-1");
+    expect(stored[0].signatureDataUrl).toBe("data:image/png;base64,sig");
+    expect(stored[0].ownerToken).toBe("secret-token");
+  });
+
   it("keeps local when local is newer (offline edits not yet synced)", async () => {
     const local = makeQuote({
       id: "q1",

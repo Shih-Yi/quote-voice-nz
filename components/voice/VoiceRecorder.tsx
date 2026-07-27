@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { RecordingStatus } from "./RecordingStatus";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import { addPendingAudio } from "@/lib/storage/pending";
+import { addPendingAudio, removePendingAudio } from "@/lib/storage/pending";
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { emit, KSQ_EVENTS } from "@/lib/events";
@@ -40,6 +40,28 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
   const processAudio = useCallback(
     async (blob: Blob) => {
       const createdAt = new Date().toISOString();
+      const pendingId = uuidv4();
+
+      // Offline-first: persist the recording BEFORE any network call. When
+      // the device is fully offline, fetch() rejects without ever producing
+      // a response — persisting only on !res.ok would lose the audio.
+      // Removed again once the quote is created (or the audio proves silent).
+      let persisted = false;
+      try {
+        await addPendingAudio({ id: pendingId, blob, createdAt, retryCount: 0 });
+        persisted = true;
+      } catch (err) {
+        if (err instanceof Error && err.name === "PendingAudioTooLargeError") {
+          toast.error("Recording too large", {
+            description: "Please record a shorter clip (max ~24MB)",
+          });
+          resetRecording();
+          return;
+        }
+        // Storage quota full — keep going online-only; the pipeline may still
+        // succeed, but a failure now means the recording can't be recovered.
+        console.warn("Failed to persist recording locally:", err);
+      }
 
       try {
         setIsProcessing(true);
@@ -63,9 +85,6 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         });
 
         if (!transcribeRes.ok) {
-          // Always persist audio so nothing is lost; specific handling below.
-          await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
-
           const errBody = await transcribeRes.json().catch(() => ({}));
 
           // Anon daily quota hit — prompt for login; pending audio will replay
@@ -98,9 +117,6 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         });
 
         if (!extractRes.ok) {
-          // Recoverable error — save to pending for retry
-          await addPendingAudio({ id: uuidv4(), blob, createdAt, retryCount: 0 });
-
           const errBody = await extractRes.json().catch(() => ({}));
           if (errBody?.action === "login_required") {
             emit(KSQ_EVENTS.AUTH_REQUIRED, { reason: "anon_quota_exceeded" });
@@ -146,6 +162,15 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
 
         await saveQuote(quote, { localOnly: true });
 
+        // Quote created — the safety-net copy of the audio is no longer
+        // needed. Failure here is non-fatal; the leftover pending item would
+        // just re-create a duplicate draft on the next Sync All.
+        if (persisted) {
+          await removePendingAudio(pendingId).catch((err) => {
+            console.warn("Failed to remove pending audio after success:", err);
+          });
+        }
+
         setIsProcessing(false);
         setProcessingStatus("");
         resetRecording();
@@ -166,24 +191,27 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         setProcessingStatus("");
 
         if (err instanceof Error && err.message === "No speech detected") {
+          // Unrecoverable — keeping silent audio queued would just fail again.
+          if (persisted) {
+            await removePendingAudio(pendingId).catch(() => {});
+          }
           toast.error("No speech detected", {
             description: "Please try recording again",
           });
         } else if (err instanceof Error && err.message === "login_required") {
           toast.info("Free trial limit reached", {
-            description: "Sign in to continue — your recording is saved",
+            description: persisted
+              ? "Sign in to continue — your recording is saved"
+              : "Sign in to continue",
           });
-        } else if (err instanceof Error && err.name === "PendingAudioTooLargeError") {
-          toast.error("Recording too large", {
-            description: "Please record a shorter clip (max ~24MB)",
-          });
-        } else if (err instanceof Error && err.name === "PendingAudioQuotaExceededError") {
-          toast.error("Device storage full", {
-            description: "Sync existing recordings before adding more",
-          });
-        } else {
+        } else if (persisted) {
           toast.info("Saved offline", {
             description: "Quote will sync when connected",
+          });
+        } else {
+          toast.error("Couldn't process recording", {
+            description:
+              "Device storage is full and the request failed — please sync existing recordings and try again",
           });
         }
         resetRecording();

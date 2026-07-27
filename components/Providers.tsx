@@ -4,6 +4,7 @@ import { type ReactNode, useEffect } from "react";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { initSentry } from "@/lib/sentry";
+import { useBackgroundSync } from "@/hooks/useBackgroundSync";
 
 function useServiceWorker() {
   useEffect(() => {
@@ -28,6 +29,7 @@ export function Providers({ children }: { children: ReactNode }) {
     initSentry();
   }, []);
   useServiceWorker();
+  useBackgroundSync();
   return (
     <AuthProvider>
       {children}

@@ -2,6 +2,7 @@ import { get, set } from "idb-keyval";
 import type { Quote } from "@/types/quote";
 import { fetchUserQuotesFromCloud } from "@/lib/supabase/quotes-api";
 import { getSyncQueue } from "@/lib/storage/quotes";
+import { mergeCloudQuote } from "@/lib/storage/mergeQuote";
 
 const QUOTES_KEY = "ksq_quotes";
 
@@ -55,7 +56,9 @@ export async function hydrateUserQuotesFromCloud(): Promise<HydrateResult> {
     }
     const winner = pickWinner(local, cloud, pendingSyncIds);
     if (winner === cloud) {
-      byId.set(cloud.id, cloud);
+      // Cloud wins, but local-only fields (attachments, signature, owner
+      // token) never round-trip through Supabase — carry them over.
+      byId.set(cloud.id, mergeCloudQuote(local, cloud));
       updated++;
     } else {
       kept++;

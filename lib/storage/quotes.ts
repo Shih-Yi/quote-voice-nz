@@ -9,6 +9,7 @@ import {
   getQuoteByIdFromSupabase,
 } from "@/lib/supabase/quotes";
 import { getDeviceToken } from "./deviceToken";
+import { mergeCloudQuote } from "./mergeQuote";
 import { preCacheQuotePage } from "@/lib/utils/swCache";
 import { logAudit } from "@/lib/utils/auditLog";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
@@ -293,11 +294,14 @@ export async function refreshQuoteFromCloud(id: string): Promise<Quote | null> {
     return existing;
   }
 
+  // Cloud wins, but local-only fields (attachments, signature, owner token)
+  // never round-trip through Supabase — carry them over.
+  const merged = mergeCloudQuote(existing, cloudQuote);
   const index = quotes.findIndex((q) => q.id === id);
-  const updatedQuotes = quotes.map((q, i) => (i === index ? cloudQuote : q));
+  const updatedQuotes = quotes.map((q, i) => (i === index ? merged : q));
 
   await set(QUOTES_KEY, updatedQuotes);
-  return cloudQuote;
+  return merged;
 }
 
 // Get quote by slug — local first (offline-first), then Supabase for unknown slugs.
