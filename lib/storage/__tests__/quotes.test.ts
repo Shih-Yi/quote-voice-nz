@@ -460,6 +460,44 @@ describe("quotes storage", () => {
       expect(result.cloudDeleted).toBe(true);
       expect(mockDeleteQuoteFromSupabase).not.toHaveBeenCalled();
     });
+
+    it("does NOT take the fast path for a synced quote with queued edits (audit #4)", async () => {
+      // Synced once, then an offline edit failed and re-queued it. The cloud
+      // row exists, so skipping the cloud delete would orphan it.
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "edited-q", cloudSyncedAt: "2026-01-02T00:00:00Z" }),
+      ]);
+      mockStore.set("ksq_sync_queue", ["edited-q"]);
+
+      await deleteQuote("edited-q");
+
+      expect(mockDeleteQuoteFromSupabase).toHaveBeenCalledWith(
+        "edited-q",
+        "dt_test_device_token"
+      );
+    });
+
+    it("restores the tombstone and reports permanent when the cloud refuses (audit #5)", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({
+        success: false,
+        error: "Cannot delete a quote that has been sent",
+        status: 403,
+        retryable: false,
+      });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "locked-q" })]);
+
+      const result = await deleteQuote("locked-q");
+
+      expect(result.permanent).toBe(true);
+      expect(result.cloudDeleted).toBe(false);
+      // Row is visible again — it genuinely still exists in the cloud.
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored).toHaveLength(1);
+      expect(stored[0].deletedAt).toBeUndefined();
+      // And it is not left retrying a doomed request.
+      const deleteQueue = (mockStore.get("ksq_delete_queue") as string[]) ?? [];
+      expect(deleteQueue).not.toContain("locked-q");
+    });
   });
 
   // ─── GET BY SLUG ─────────────────────────────────────
@@ -893,6 +931,35 @@ describe("quotes storage", () => {
       const failures = mockStore.get("ksq_sync_failures") as Record<string, unknown>;
       expect(failures["recover-q"]).toBeUndefined();
     });
+
+    it("records cloudSyncedAt on success so deleteQuote can see it reached the cloud", async () => {
+      mockStore.set("ksq_quotes", [makeQuote({ id: "mark-q" })]);
+      mockStore.set("ksq_sync_queue", ["mark-q"]);
+
+      await syncPendingQuotes();
+
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].cloudSyncedAt).toBeTruthy();
+    });
+
+    it("drops permanently-rejected quotes instead of burning retries (audit #5)", async () => {
+      mockSyncQuoteToSupabase.mockResolvedValue({
+        success: false,
+        error: "Access denied",
+        status: 403,
+        retryable: false,
+      });
+      mockStore.set("ksq_quotes", [makeQuote({ id: "denied-q" })]);
+      mockStore.set("ksq_sync_queue", ["denied-q"]);
+
+      const result = await syncPendingQuotes();
+
+      expect(result.gaveUp).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(mockStore.get("ksq_sync_queue")).not.toContain("denied-q");
+      const failures = (mockStore.get("ksq_sync_failures") ?? {}) as Record<string, unknown>;
+      expect(failures["denied-q"]).toBeUndefined();
+    });
   });
 
   describe("syncPendingDeletions retry/backoff", () => {
@@ -916,6 +983,32 @@ describe("quotes storage", () => {
       expect(stored[0].deletedAt).toBeTruthy();
       // But it's dropped from auto-retry to stop hammering the server.
       expect((mockStore.get("ksq_delete_queue") as string[])).not.toContain("dead-del-q");
+    });
+
+    it("restores the local row when the cloud permanently refuses (audit #5)", async () => {
+      mockDeleteQuoteFromSupabase.mockResolvedValue({
+        success: false,
+        error: "Cannot delete a quote that has been sent",
+        status: 403,
+        retryable: false,
+      });
+      mockStore.set("ksq_quotes", [
+        makeQuote({ id: "refused-del-q", deletedAt: new Date().toISOString() }),
+      ]);
+      mockStore.set("ksq_delete_queue", ["refused-del-q"]);
+
+      const { syncPendingDeletions } = await import("../quotes");
+      const result = await syncPendingDeletions();
+
+      expect(result.gaveUp).toBe(1);
+      expect(result.failed).toBe(0);
+      // Tombstone rolled back — the quote still exists in the cloud, so
+      // hiding it locally would misrepresent reality.
+      const stored = mockStore.get("ksq_quotes") as Quote[];
+      expect(stored[0].deletedAt).toBeUndefined();
+      expect((mockStore.get("ksq_delete_queue") as string[])).not.toContain(
+        "refused-del-q"
+      );
     });
 
     it("skips delete IDs in backoff window", async () => {

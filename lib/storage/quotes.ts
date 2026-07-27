@@ -155,6 +155,18 @@ export async function syncPendingDeletions(): Promise<{
       await removeFromDeleteQueue(quoteId);
       await clearRetryState(DELETE_FAILURES_KEY, quoteId);
       deleted++;
+    } else if (result.retryable === false) {
+      // The server will never accept this deletion (e.g. 403 on a quote that
+      // is already sent/accepted). Keeping the tombstone would hide a quote
+      // that still exists and is still publicly shareable, so restore it and
+      // let the user see the truth.
+      console.error(
+        `[syncPendingDeletions] PERMANENT FAILURE id=${quoteId} status=${result.status} — ${result.error}; restoring local row`
+      );
+      await restoreTombstonedQuote(quoteId);
+      await removeFromDeleteQueue(quoteId);
+      await clearRetryState(DELETE_FAILURES_KEY, quoteId);
+      gaveUp++;
     } else {
       await recordRetryFailure(DELETE_FAILURES_KEY, quoteId);
       failed++;
@@ -212,7 +224,18 @@ export async function syncPendingQuotes(): Promise<{
     if (result.success) {
       await removeFromSyncQueue(quoteId);
       await clearRetryState(SYNC_FAILURES_KEY, quoteId);
+      await markQuoteCloudSynced(quoteId, result.slug);
       synced++;
+    } else if (result.retryable === false) {
+      // Permanent rejection (403 ownership, 409 status conflict, 400 bad
+      // payload). Retrying burns quota for a request that cannot succeed —
+      // drop it now. The quote stays local; re-saving re-queues it.
+      console.error(
+        `[syncPendingQuotes] PERMANENT FAILURE id=${quoteId} status=${result.status} — ${result.error}`
+      );
+      await removeFromSyncQueue(quoteId);
+      await clearRetryState(SYNC_FAILURES_KEY, quoteId);
+      gaveUp++;
     } else {
       await recordRetryFailure(SYNC_FAILURES_KEY, quoteId);
       failed++;
@@ -239,6 +262,41 @@ async function findQuoteByIdRaw(id: string): Promise<Quote | undefined> {
 async function purgeLocalQuote(id: string): Promise<void> {
   const quotes = await getAllQuotesRaw();
   await set(QUOTES_KEY, quotes.filter((q) => q.id !== id));
+}
+
+// Internal: record that this quote reached the cloud, and adopt any slug the
+// server resolved for us (collision handling). `cloudSyncedAt` is what lets
+// deleteQuote tell "never uploaded" (safe to purge locally) apart from
+// "uploaded, then edited offline" (a cloud row exists and must be deleted
+// server-side, or we leave an orphan that hydrate would resurrect).
+async function markQuoteCloudSynced(id: string, serverSlug?: string): Promise<void> {
+  const quotes = await getAllQuotesRaw();
+  const index = quotes.findIndex((q) => q.id === id);
+  if (index < 0) return;
+
+  const current = quotes[index];
+  const slug = serverSlug && serverSlug !== current.slug ? serverSlug : current.slug;
+
+  await set(
+    QUOTES_KEY,
+    quotes.map((q, i) =>
+      i === index ? { ...q, slug, cloudSyncedAt: new Date().toISOString() } : q
+    )
+  );
+}
+
+// Internal: clear a tombstone, bringing the quote back into UI lists. Used
+// when the cloud permanently refuses the deletion — the row still exists
+// server-side, so pretending it's gone locally would mislead the user.
+async function restoreTombstonedQuote(id: string): Promise<void> {
+  const quotes = await getAllQuotesRaw();
+  const index = quotes.findIndex((q) => q.id === id);
+  if (index < 0 || !quotes[index].deletedAt) return;
+
+  await set(
+    QUOTES_KEY,
+    quotes.map((q, i) => (i === index ? { ...q, deletedAt: undefined } : q))
+  );
 }
 
 // Get all quotes from local storage (tombstoned quotes are hidden)
@@ -380,19 +438,20 @@ export async function saveQuote(
   if (result.success) {
     await removeFromSyncQueue(updatedQuote.id);
     await clearRetryState(SYNC_FAILURES_KEY, updatedQuote.id);
-    // Server may have resolved a slug collision — update local copy if slug changed
-    let finalSlug = updatedQuote.slug;
-    if (result.slug && result.slug !== updatedQuote.slug) {
-      finalSlug = result.slug;
-      const currentQuotes = await getAllQuotesRaw();
-      await set(QUOTES_KEY, currentQuotes.map((q) =>
-        q.id === updatedQuote.id ? { ...q, slug: result.slug! } : q
-      ));
-    }
-    return { synced: true, slug: finalSlug };
+    // Records cloudSyncedAt and adopts any slug the server resolved for us.
+    await markQuoteCloudSynced(updatedQuote.id, result.slug);
+    return { synced: true, slug: result.slug || updatedQuote.slug };
   }
 
   console.warn("[saveQuote] Cloud sync failed (local save succeeded):", result.error);
+  if (result.retryable === false) {
+    // Doomed request — don't queue it. The local save stands; the caller
+    // surfaces syncError so the user knows the cloud copy is out of date.
+    console.error(
+      `[saveQuote] PERMANENT FAILURE id=${updatedQuote.id} status=${result.status} — ${result.error}`
+    );
+    return { synced: false, syncError: result.error || "Cloud sync rejected" };
+  }
   await addToSyncQueue(updatedQuote.id);
   await recordRetryFailure(SYNC_FAILURES_KEY, updatedQuote.id);
   return { synced: false, syncError: result.error || "Cloud sync failed" };
@@ -437,6 +496,11 @@ export async function updateQuote(
     if (result.success) {
       await removeFromSyncQueue(quote.id);
       await clearRetryState(SYNC_FAILURES_KEY, quote.id);
+      await markQuoteCloudSynced(quote.id, result.slug);
+    } else if (result.retryable === false) {
+      console.error(
+        `[updateQuote] PERMANENT FAILURE id=${quote.id} status=${result.status} — ${result.error}`
+      );
     } else {
       console.warn("[updateQuote] Cloud sync failed (local save succeeded):", result.error);
       await addToSyncQueue(quote.id);
@@ -484,14 +548,21 @@ export async function markQuoteAsSent(
   if (result.success) {
     await removeFromSyncQueue(quoteId);
     await clearRetryState(SYNC_FAILURES_KEY, quoteId);
+    await markQuoteCloudSynced(quoteId, result.slug);
+  } else if (result.retryable === false) {
+    console.error(
+      `[markQuoteAsSent] PERMANENT FAILURE id=${quoteId} status=${result.status} — ${result.error}`
+    );
   } else {
     console.warn("[markQuoteAsSent] Cloud sync failed (local save succeeded):", result.error);
     await addToSyncQueue(quoteId);
     await recordRetryFailure(SYNC_FAILURES_KEY, quoteId);
   }
 
-  // Pre-cache the public quote page for offline sharing
-  if (updatedQuote.slug) {
+  // Pre-cache the public quote page for offline sharing. Only meaningful once
+  // the cloud knows the quote is "sent" — before that the public RPC filters
+  // it out and we'd cache a "Quote Not Found" render.
+  if (result.success && updatedQuote.slug) {
     preCacheQuotePage(updatedQuote.slug);
   }
 
@@ -533,6 +604,8 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
     updatedAt: new Date().toISOString(),
     signatureDataUrl: undefined,
     deletedAt: undefined,
+    // Brand new id — the cloud has never seen this row.
+    cloudSyncedAt: undefined,
   };
 
   const result = await saveQuote(newQuote);
@@ -557,9 +630,15 @@ export async function duplicateQuote(quoteId: string): Promise<Quote | null> {
 // This prevents the data-loss window where the local row is gone before we know
 // the cloud accepted the delete.
 //
-// Fast path: if the quote was never synced to the cloud (still in the sync queue),
-// we purge locally without a cloud call — the cloud never knew about it.
-export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; error?: string }> {
+// Fast path: if the quote demonstrably never reached the cloud (no
+// cloudSyncedAt AND still queued for its first sync), we purge locally without
+// a cloud call. Being in the sync queue is NOT sufficient on its own — a quote
+// that synced successfully and later failed an edit is also queued, and
+// skipping the cloud delete there would leave an orphan row that the next
+// hydrate would resurrect.
+export async function deleteQuote(
+  id: string
+): Promise<{ cloudDeleted: boolean; error?: string; permanent?: boolean }> {
   const raw = await getAllQuotesRaw();
   const existing = raw.find((q) => q.id === id);
 
@@ -573,9 +652,10 @@ export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; 
   }
 
   const pendingSync = (await getSyncQueue()).includes(id);
+  const neverSynced = !existing.cloudSyncedAt && pendingSync;
 
   // Fast path: never uploaded to cloud — just purge locally, no cloud round-trip needed.
-  if (pendingSync) {
+  if (neverSynced) {
     await purgeLocalQuote(id);
     await removeFromSyncQueue(id);
     await removeFromDeleteQueue(id);
@@ -603,13 +683,31 @@ export async function deleteQuote(id: string): Promise<{ cloudDeleted: boolean; 
     await purgeLocalQuote(id);
     await removeFromDeleteQueue(id);
     await clearRetryState(DELETE_FAILURES_KEY, id);
-  } else {
-    console.warn("[deleteQuote] Cloud deletion failed, queued for retry:", deleteResult.error);
-    await addToDeleteQueue(id);
-    await recordRetryFailure(DELETE_FAILURES_KEY, id);
+    return { cloudDeleted: true };
   }
 
-  return { cloudDeleted: deleteResult.success, error: deleteResult.error };
+  if (deleteResult.retryable === false) {
+    // Server permanently refuses (e.g. the quote is already sent/accepted).
+    // Undo the tombstone so the list keeps showing a quote that genuinely
+    // still exists, and tell the caller not to navigate away.
+    console.error(
+      `[deleteQuote] PERMANENT FAILURE id=${id} status=${deleteResult.status} — ${deleteResult.error}`
+    );
+    await restoreTombstonedQuote(id);
+    await removeFromDeleteQueue(id);
+    await clearRetryState(DELETE_FAILURES_KEY, id);
+    return {
+      cloudDeleted: false,
+      error: deleteResult.error || "Cloud rejected the deletion",
+      permanent: true,
+    };
+  }
+
+  console.warn("[deleteQuote] Cloud deletion failed, queued for retry:", deleteResult.error);
+  await addToDeleteQueue(id);
+  await recordRetryFailure(DELETE_FAILURES_KEY, id);
+
+  return { cloudDeleted: false, error: deleteResult.error };
 }
 
 // Get recent quotes (local)

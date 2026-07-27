@@ -131,6 +131,9 @@ export function fromSupabaseFormat(row: SupabaseQuoteRow): Quote {
     status: row.status as "draft" | "sent" | "accepted",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // The row came from Supabase, so by definition the cloud has it. Keeps
+    // deleteQuote from mistaking a hydrated quote for a never-uploaded one.
+    cloudSyncedAt: row.updated_at,
   };
 }
 
@@ -163,7 +166,14 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
   }
 }
 
-// Get quote by ID
+// Get quote by ID — direct table SELECT under RLS.
+//
+// Migration 014 restricts SELECT on api.quotes to `authenticated` rows where
+// user_id = auth.uid(); the anon role has no SELECT policy at all. So this
+// only ever returns data for a signed-in owner. We check the session up front
+// rather than firing a request that is guaranteed to come back empty —
+// anonymous users simply have no cloud refresh path (public sharing goes
+// through the get_quote_by_slug RPC instead).
 export async function getQuoteByIdFromSupabase(id: string): Promise<Quote | null> {
   const supabase = getSupabase();
   if (!supabase) {
@@ -171,6 +181,11 @@ export async function getQuoteByIdFromSupabase(id: string): Promise<Quote | null
   }
 
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return null;
+    }
+
     const { data, error } = await supabase
       .from("quotes")
       .select("*")

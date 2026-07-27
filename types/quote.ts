@@ -45,6 +45,11 @@ export interface Quote {
   // Tombstone timestamp — set when user deletes; physical purge happens after
   // cloud deletion is confirmed. Tombstoned quotes are hidden from all lists.
   deletedAt?: string;
+  // Last time this quote was confirmed to exist in Supabase. Absent means the
+  // cloud has never seen it, which lets deleteQuote skip the cloud round trip
+  // instead of leaving an orphan row behind, and lets share UI tell whether a
+  // public link will actually resolve for the customer.
+  cloudSyncedAt?: string;
   ownerProfile?: UserProfile;  // Fetched from Supabase for public quote views
 
   // Rich content

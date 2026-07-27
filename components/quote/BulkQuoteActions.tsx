@@ -62,12 +62,20 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
     const ids = deletableSelectedIds();
     const skipped = selectedIds.size - ids.length;
     let deleted = 0;
+    let rejected = 0;
     for (const id of ids) {
       try {
-        await deleteQuote(id);
-        deleted++;
+        const result = await deleteQuote(id);
+        // A permanent rejection rolls the quote back into the list — counting
+        // it as deleted would tell the user something that isn't true.
+        if (result.permanent) {
+          rejected++;
+        } else {
+          deleted++;
+        }
       } catch (e) {
         console.error(`Failed to delete ${id}:`, e);
+        rejected++;
       }
     }
     setIsDeleting(false);
@@ -80,6 +88,9 @@ export function BulkQuoteActions({ quotes, onComplete }: BulkQuoteActionsProps) 
       );
     } else {
       toast.success(`Deleted ${deleted} quote(s)`);
+    }
+    if (rejected > 0) {
+      toast.error(`${rejected} quote(s) could not be deleted and were restored`);
     }
     onComplete();
   }, [selectedIds, onComplete, deletableSelectedIds]);

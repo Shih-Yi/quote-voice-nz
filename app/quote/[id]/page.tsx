@@ -132,7 +132,11 @@ export default function QuoteEditorPage({ params }: PageProps) {
         toast.error(result.error);
         return;
       }
-      setQuote({ ...quote, status: "sent" });
+      // Re-read from storage rather than patching state — markQuoteAsSent also
+      // records cloudSyncedAt, which QuoteShare needs to know whether the
+      // public link is live yet.
+      const refreshed = await getQuoteById(quote.id);
+      setQuote(refreshed ?? { ...quote, status: "sent" });
       if (!result.synced) {
         toast.warning("Marked as sent locally, but cloud sync failed. Will retry automatically.");
       } else {
@@ -153,6 +157,16 @@ export default function QuoteEditorPage({ params }: PageProps) {
 
     try {
       const result = await deleteQuote(quote.id);
+
+      if (result.permanent) {
+        // Cloud refused for good (e.g. the quote is already sent there). The
+        // local tombstone has been rolled back, so stay put and show why.
+        toast.error(result.error || "This quote can no longer be deleted.");
+        const restored = await getQuoteById(quote.id);
+        if (restored) setQuote(restored);
+        return;
+      }
+
       if (!result.cloudDeleted) {
         toast.warning("Deleted locally, but cloud removal failed. Will retry automatically.");
       } else {

@@ -4,11 +4,33 @@ import {
   type SupabaseQuoteRow,
 } from "@/lib/supabase/quotes";
 
+export interface CloudWriteResult {
+  success: boolean;
+  error?: string;
+  status?: number;
+  /**
+   * False when the server rejected the request in a way that will never
+   * succeed on retry (bad payload, ownership mismatch, status conflict).
+   * Callers use this to drop the item from the retry queue immediately
+   * instead of burning the full backoff schedule on a doomed request.
+   */
+  retryable?: boolean;
+  slug?: string;
+}
+
+// Whether an HTTP failure is worth retrying. 5xx are server-side blips;
+// 408 (request timeout) and 429 (rate limited) are transient by definition.
+// Every other 4xx means the request itself is wrong and will stay wrong.
+function isRetryableStatus(status: number): boolean {
+  if (status === 408 || status === 429) return true;
+  return status >= 500;
+}
+
 // Sync quote to Supabase via Next.js API route
 export async function syncQuoteToSupabase(
   quote: Quote,
   deviceToken: string
-): Promise<{ success: boolean; error?: string; slug?: string }> {
+): Promise<CloudWriteResult> {
   try {
     const res = await fetch("/api/quotes", {
       method: "POST",
@@ -40,15 +62,21 @@ export async function syncQuoteToSupabase(
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      return { success: false, error: body.error || `HTTP ${res.status}` };
+      return {
+        success: false,
+        error: body.error || `HTTP ${res.status}`,
+        status: res.status,
+        retryable: isRetryableStatus(res.status),
+      };
     }
 
     const data = await res.json().catch(() => ({}));
     // Server may resolve slug collisions — return the final slug
     return { success: true, slug: data.slug };
   } catch (err) {
+    // Network-level failure (offline, DNS, aborted) — always worth retrying.
     console.error("Supabase sync exception:", err);
-    return { success: false, error: "Failed to sync to cloud" };
+    return { success: false, error: "Failed to sync to cloud", retryable: true };
   }
 }
 
@@ -56,7 +84,7 @@ export async function syncQuoteToSupabase(
 export async function deleteQuoteFromSupabase(
   id: string,
   deviceToken: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<CloudWriteResult> {
   try {
     const res = await fetch("/api/quotes", {
       method: "DELETE",
@@ -64,14 +92,30 @@ export async function deleteQuoteFromSupabase(
       body: JSON.stringify({ id, token: deviceToken }),
     });
 
+    // 404 means the row isn't in the cloud — which is exactly the end state
+    // DELETE is asking for. Treating it as success keeps deletion idempotent
+    // and stops never-synced quotes from being retried into the give-up path.
+    if (res.status === 404) {
+      return { success: true };
+    }
+
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      return { success: false, error: body.error || `HTTP ${res.status}` };
+      return {
+        success: false,
+        error: body.error || `HTTP ${res.status}`,
+        status: res.status,
+        retryable: isRetryableStatus(res.status),
+      };
     }
 
     return { success: true };
   } catch {
-    return { success: false, error: "Failed to delete from cloud" };
+    return {
+      success: false,
+      error: "Failed to delete from cloud",
+      retryable: true,
+    };
   }
 }
 
