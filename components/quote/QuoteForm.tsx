@@ -14,6 +14,7 @@ import { QuoteAttachments } from "./QuoteAttachments";
 import { ItemTemplates } from "./ItemTemplates";
 import { formatNZD } from "@/lib/utils/currency";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
+import { setDefaultGstInclusive } from "@/lib/storage/preferences";
 import type { Quote, LineItem, QuoteAttachment, UserProfile } from "@/types/quote";
 
 interface QuoteFormProps {
@@ -147,6 +148,10 @@ export function QuoteForm({ quote: initialQuote, onSave, onShowAuthModal }: Quot
           updatedAt: new Date().toISOString(),
         };
       });
+      // Remember it so the next quote — including voice ones — starts in the
+      // mode this tradie actually works in. Fire and forget; failing to
+      // persist a preference must not disturb the edit in progress.
+      void setDefaultGstInclusive(newValue);
       return newValue;
     });
   }, [updateTotals]);

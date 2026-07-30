@@ -182,14 +182,13 @@ migration 017 / 018 需要套用到 Supabase。兩支都是冪等的，可重複
 
 ---
 
-## 未處理（後續批次）
+## 後續批次
 
-第二批（正確性）：
-- GST 浮點誤差 —— 師傅端 `Math.round` 與 DB `NUMERIC` 在約 1.3% 的金額上差 1 分錢
-- 語音報價寫死 `gstInclusive: false`，建議改為使用者層級預設且預設 inclusive
-- `/api/transcribe` 在 Groq 呼叫**前**就扣每日配額，離線重試每次再扣一次
+第二批（正確性）**已完成** —— 見
+[security-audit-batch2-fixes.md](./security-audit-batch2-fixes.md)：
+GST 浮點誤差、語音報價 GST 預設、transcribe 配額扣點時機。
 
-第三批（成本與韌性）：
+第三批（成本與韌性，未處理）：
 - 匿名使用者在 `/api/quotes` 無月配額；`cleanup_anon_orphan_quotes` 未排程
 - `GLOBAL_DAILY_TRANSCRIBES: 200` 寫死且與付費用戶共用；costGuard RPC 失敗一律 fail-open
 - slug 與 device token 使用 `Math.random()`，應改 CSPRNG 並加長 slug

@@ -205,9 +205,12 @@ export async function POST(request: NextRequest) {
         total,
       });
     }
-    const itemsSum = Math.round(
-      sanitizedItems.reduce((sum, item) => sum + item.total, 0) * 100
-    ) / 100;
+    // Sum in integer cents. Adding 2dp floats and rounding once at the end
+    // accumulates error across many items; the client derives its own copy of
+    // this figure the same way (lib/utils/gst.ts) and the two must not drift.
+    const itemsSum =
+      sanitizedItems.reduce((sum, item) => sum + Math.round(item.total * 100), 0) /
+      100;
 
     const tokenHash = hashToken(body.token);
     const op = "POST";

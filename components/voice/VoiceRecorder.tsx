@@ -16,7 +16,8 @@ import {
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { emit, KSQ_EVENTS } from "@/lib/events";
-import { calculateQuoteTotals } from "@/lib/utils/gst";
+import { calculateQuoteTotals, calculateItemTotal } from "@/lib/utils/gst";
+import { getDefaultGstInclusive } from "@/lib/storage/preferences";
 import { compressToMp3 } from "@/lib/utils/audioCompress";
 import type { Quote, ExtractionResult } from "@/types/quote";
 
@@ -146,10 +147,13 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          total: Number((item.quantity * item.unitPrice).toFixed(2)),
+          total: calculateItemTotal(item.quantity, item.unitPrice),
         }));
 
-        const { subtotal, gst, total } = calculateQuoteTotals(items, false);
+        // Whichever GST mode this tradie last worked in, rather than always
+        // exclusive. Homeowner quotes are inclusive by NZ convention.
+        const gstInclusive = await getDefaultGstInclusive();
+        const { subtotal, gst, total } = calculateQuoteTotals(items, gstInclusive);
 
         const quote: Quote = {
           id: pendingId,
@@ -159,7 +163,7 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           customerAddress: extraction.customerAddress ?? undefined,
           items,
           notes: extraction.notes ?? undefined,
-          gstInclusive: false,
+          gstInclusive,
           subtotal,
           gst,
           total,

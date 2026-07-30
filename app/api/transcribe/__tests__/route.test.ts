@@ -24,6 +24,14 @@ const mockConsumeUserDailyQuota = vi.fn().mockResolvedValue({
   retryAfter: 0,
 });
 
+// The route peeks before calling Groq and consumes only after it returns, so
+// a failed transcription costs the user nothing.
+const mockPeekUserDailyQuota = vi.fn().mockResolvedValue({
+  allowed: true,
+  remaining: 19,
+  retryAfter: 0,
+});
+
 // Bypass the daily quota guards for unit tests — they're covered by the
 // Supabase-integration tests for costGuard directly.
 const mockCheckGlobalTranscribeCap = vi
@@ -42,6 +50,7 @@ vi.mock("@/lib/costGuard", () => ({
   checkAnonDeviceQuota: mockCheckAnonDeviceQuota,
   checkAnonIpQuota: mockCheckAnonIpQuota,
   consumeUserDailyQuota: mockConsumeUserDailyQuota,
+  peekUserDailyQuota: mockPeekUserDailyQuota,
   hashIdentifier: (v: string) => `hashed:${v}`,
 }));
 
@@ -320,7 +329,7 @@ describe("POST /api/transcribe", () => {
         id: "user-1",
         email: "u@example.com",
       });
-      mockConsumeUserDailyQuota.mockResolvedValueOnce({
+      mockPeekUserDailyQuota.mockResolvedValueOnce({
         allowed: false,
         remaining: 0,
         retryAfter: 3600,
@@ -336,6 +345,8 @@ describe("POST /api/transcribe", () => {
       expect(data.tier).toBe("free");
       expect(response.headers.get("Retry-After")).toBe("3600");
       expect(mockCreate).not.toHaveBeenCalled();
+      // Rejected before Groq, so nothing was spent and nothing consumed.
+      expect(mockConsumeUserDailyQuota).not.toHaveBeenCalled();
     });
 
     it("logged-in: monthly under-limit + daily under-limit → transcribes", async () => {
@@ -355,6 +366,59 @@ describe("POST /api/transcribe", () => {
       );
 
       expect(response.status).toBe(200);
+      // Charged exactly once, and only after Groq came back.
+      expect(mockConsumeUserDailyQuota).toHaveBeenCalledTimes(1);
+    });
+
+    // The regression this ordering exists to prevent: a tradie recording in a
+    // dead spot fails, the offline queue retries every 60s, and each attempt
+    // used to burn another daily slot for a quote that never materialised.
+    it("does not charge a daily slot when the Groq call fails", async () => {
+      mockGetCurrentUserServer.mockResolvedValueOnce({
+        id: "user-1",
+        email: "u@example.com",
+      });
+      mockGetUserTier.mockResolvedValueOnce("free");
+      mockGetMonthlyUsage.mockResolvedValueOnce({
+        quotesCreated: 2,
+        emailsSent: 0,
+      });
+      mockCreate.mockRejectedValueOnce(new Error("network timeout"));
+
+      const response = await POST(
+        makeRequest(makeFormData(makeAudioFile())) as never
+      );
+
+      expect(response.status).toBe(500);
+      expect(mockPeekUserDailyQuota).toHaveBeenCalledTimes(1);
+      expect(mockConsumeUserDailyQuota).not.toHaveBeenCalled();
+    });
+
+    it("still returns the transcription when a concurrent request took the last slot", async () => {
+      mockGetCurrentUserServer.mockResolvedValueOnce({
+        id: "user-1",
+        email: "u@example.com",
+      });
+      mockGetUserTier.mockResolvedValueOnce("free");
+      mockGetMonthlyUsage.mockResolvedValueOnce({
+        quotesCreated: 2,
+        emailsSent: 0,
+      });
+      mockCreate.mockResolvedValueOnce({ text: "kitchen tap" });
+      // Peek passed, but the slot was gone by the time we consumed.
+      mockConsumeUserDailyQuota.mockResolvedValueOnce({
+        allowed: false,
+        remaining: 0,
+        retryAfter: 3600,
+      });
+
+      const response = await POST(
+        makeRequest(makeFormData(makeAudioFile())) as never
+      );
+
+      // Groq has already been paid for — don't throw the result away.
+      expect(response.status).toBe(200);
+      expect((await response.json()).text).toBe("kitchen tap");
     });
 
     it("does NOT increment quotes_created — /api/quotes owns that counter", async () => {

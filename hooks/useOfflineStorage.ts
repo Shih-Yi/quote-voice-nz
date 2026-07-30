@@ -11,7 +11,8 @@ import {
 import { saveQuote, generateSlug } from "@/lib/storage/quotes";
 import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { emit, KSQ_EVENTS } from "@/lib/events";
-import { calculateQuoteTotals } from "@/lib/utils/gst";
+import { calculateQuoteTotals, calculateItemTotal } from "@/lib/utils/gst";
+import { getDefaultGstInclusive } from "@/lib/storage/preferences";
 import { v4 as uuidv4 } from "uuid";
 import type { Quote, PendingAudio, ExtractionResult } from "@/types/quote";
 
@@ -125,10 +126,13 @@ export function useOfflineStorage(): UseOfflineStorageResult {
         description: i.description,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
-        total: i.quantity * i.unitPrice,
+        // Was unrounded here while the live voice path rounded to cents, so a
+        // replayed recording could store a line total like 33.329999999999998.
+        total: calculateItemTotal(i.quantity, i.unitPrice),
       }));
 
-      const { subtotal, gst, total } = calculateQuoteTotals(items, false);
+      const gstInclusive = await getDefaultGstInclusive();
+      const { subtotal, gst, total } = calculateQuoteTotals(items, gstInclusive);
 
       const quote: Quote = {
         id: quoteId,
@@ -138,7 +142,7 @@ export function useOfflineStorage(): UseOfflineStorageResult {
         customerAddress: extraction.customerAddress ?? undefined,
         items,
         notes: extraction.notes ?? undefined,
-        gstInclusive: false,
+        gstInclusive,
         subtotal,
         gst,
         total,

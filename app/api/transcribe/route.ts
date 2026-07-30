@@ -8,6 +8,7 @@ import {
   checkAnonDeviceQuota,
   checkAnonIpQuota,
   consumeUserDailyQuota,
+  peekUserDailyQuota,
   LIMITS,
 } from "@/lib/costGuard";
 
@@ -103,9 +104,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Tier-based quota for logged-in users — check BEFORE Groq call so we
-    // reject early, but increment only after success to avoid wasting quota
-    // on a failed API call.
+    // Tier-based quota for logged-in users. Checked here so an over-quota
+    // request is rejected before we spend anything on Groq; the daily counter
+    // is incremented further down, only once the transcription has actually
+    // come back. Consuming it here instead meant a network failure or a Groq
+    // timeout burned a slot, and the offline retry queue re-burned one on
+    // every attempt — the exact situation this app is built for.
+    let dailyQuotaLimit: number | null = null;
     if (user) {
       const { getMonthlyUsage, getUserTier, TIER_LIMITS } = await import(
         "@/lib/supabase/subscription"
@@ -126,14 +131,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Daily cap layered under monthly — free tier can't dump full month
-      // allowance in one day. Consumes (increments) here so the gate is
-      // self-contained; /api/extract peeks without consuming to avoid double
-      // counting the paired voice flow.
-      const dailyGuard = await consumeUserDailyQuota(
-        user.id,
-        limits.quotesPerDay
-      );
+      // Daily cap layered under monthly — free tier can't dump its full month
+      // allowance in one day. Peek only; the increment happens after Groq
+      // returns. /api/extract also peeks, and relies on this route owning the
+      // increment so the paired voice flow counts once.
+      dailyQuotaLimit = limits.quotesPerDay;
+      const dailyGuard = await peekUserDailyQuota(user.id, limits.quotesPerDay);
       if (!dailyGuard.allowed) {
         return NextResponse.json(
           {
@@ -158,6 +161,20 @@ export async function POST(request: NextRequest) {
       prompt:
         "Use New Zealand English spelling: labour, colour, centre, metre, organised, specialised. This is a quote for trade work in New Zealand.",
     });
+
+    // Transcription succeeded, so now the daily slot is genuinely used.
+    // A failure above returns before this point and costs the user nothing.
+    if (user && dailyQuotaLimit !== null) {
+      const consumed = await consumeUserDailyQuota(user.id, dailyQuotaLimit);
+      if (!consumed.allowed) {
+        // A concurrent request took the last slot between our peek and here.
+        // The Groq call is already paid for — hand the text over and log it
+        // rather than throw away work the user is entitled to.
+        console.warn(
+          `[/api/transcribe] DAILY_QUOTA_RACE user=${user.id} — served past limit ${dailyQuotaLimit}`
+        );
+      }
+    }
 
     // NOTE: the monthly quotes_created counter is deliberately NOT incremented
     // here. /api/quotes owns it, incrementing once per new quote row, so that

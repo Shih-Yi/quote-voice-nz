@@ -118,4 +118,118 @@ describe("GST calculations", () => {
       expect(result.total).toBe(115);
     });
   });
+
+  // The tradie reads these numbers; the customer opening /q/[slug] reads the
+  // database's GENERATED columns. They have to be the same numbers.
+  //
+  //   subtotal = gst_inclusive ? ROUND(items_sum * 20 / 23, 2) : items_sum
+  //   gst      = gst_inclusive ? ROUND(items_sum * 3 / 23, 2)
+  //                            : ROUND(items_sum * 15 / 100, 2)
+  //   total    = gst_inclusive ? items_sum : ROUND(items_sum * 115 / 100, 2)
+  //
+  // Postgres evaluates those on NUMERIC: exact decimal, ties away from zero.
+  describe("agreement with the database's GENERATED columns", () => {
+    /** Reference implementation of ROUND(a/b, 0) on exact integers. */
+    function pgRound(a: number, b: number): number {
+      return Math.floor((2 * a + b) / (2 * b));
+    }
+
+    function dbColumns(itemsSumCents: number, inclusive: boolean) {
+      const S = itemsSumCents;
+      return inclusive
+        ? {
+            subtotal: pgRound(S * 20, 23) / 100,
+            gst: pgRound(S * 3, 23) / 100,
+            total: S / 100,
+          }
+        : {
+            subtotal: S / 100,
+            gst: pgRound(S * 15, 100) / 100,
+            total: pgRound(S * 115, 100) / 100,
+          };
+    }
+
+    // Each of these produced a one-cent disagreement under the old
+    // `Math.round(value * 100) / 100` implementation.
+    it.each([
+      [1.5, 0.22, 0.23],
+      [3.3, 0.49, 0.5],
+      [4.1, 0.61, 0.62],
+      [33.3, 4.99, 5.0],
+    ])(
+      "$%s exclusive: was %s locally vs %s in the database",
+      (amount, previouslyWrong, correct) => {
+        const { gst } = calculateQuoteTotals(
+          [{ quantity: 1, unitPrice: amount }],
+          false
+        );
+        expect(gst).not.toBe(previouslyWrong);
+        expect(gst).toBe(correct);
+      }
+    );
+
+    it("matches the database on every amount from $0.01 to $1000, exclusive", () => {
+      const mismatches: number[] = [];
+      for (let cents = 1; cents <= 100_000; cents++) {
+        const local = calculateQuoteTotals(
+          [{ quantity: 1, unitPrice: cents / 100 }],
+          false
+        );
+        const db = dbColumns(cents, false);
+        if (
+          local.subtotal !== db.subtotal ||
+          local.gst !== db.gst ||
+          local.total !== db.total
+        ) {
+          mismatches.push(cents / 100);
+        }
+      }
+      expect(mismatches).toEqual([]);
+    });
+
+    it("matches the database on every amount from $0.01 to $1000, inclusive", () => {
+      const mismatches: number[] = [];
+      for (let cents = 1; cents <= 100_000; cents++) {
+        const local = calculateQuoteTotals(
+          [{ quantity: 1, unitPrice: cents / 100 }],
+          true
+        );
+        const db = dbColumns(cents, true);
+        if (
+          local.subtotal !== db.subtotal ||
+          local.gst !== db.gst ||
+          local.total !== db.total
+        ) {
+          mismatches.push(cents / 100);
+        }
+      }
+      expect(mismatches).toEqual([]);
+    });
+
+    it("keeps subtotal + gst equal to total in both modes", () => {
+      for (let cents = 1; cents <= 20_000; cents++) {
+        for (const inclusive of [true, false]) {
+          const { subtotal, gst, total } = calculateQuoteTotals(
+            [{ quantity: 1, unitPrice: cents / 100 }],
+            inclusive
+          );
+          expect(Math.round(subtotal * 100) + Math.round(gst * 100)).toBe(
+            Math.round(total * 100)
+          );
+        }
+      }
+    });
+
+    it("does not accumulate float error across many line items", () => {
+      // 0.1 + 0.2 + ... in floats drifts; summing cents does not.
+      const items = Array.from({ length: 300 }, () => ({
+        quantity: 1,
+        unitPrice: 0.1,
+      }));
+      const { subtotal, gst, total } = calculateQuoteTotals(items, false);
+      expect(subtotal).toBe(30);
+      expect(gst).toBe(4.5);
+      expect(total).toBe(34.5);
+    });
+  });
 });
