@@ -31,6 +31,14 @@ export default function PublicQuotePage({ params }: PageProps) {
   // Anonymous tradie viewing their own quote on the device that created it —
   // IndexedDB presence is our "this is the creator's device" signal.
   const showRegisterPrompt = !user && isLocalCreator;
+  // Online acceptance is a paid feature of the *creator's* plan. The customer
+  // is not our customer and cannot act on a paywall, so we never show them one:
+  // on the free plan the button simply isn't offered and they get the tradie's
+  // contact details instead. The owner is told about this before they send
+  // (see QuoteShare). ownerTier is undefined offline — treat that as "unknown",
+  // which also hides the button rather than showing one that would 403.
+  const canAcceptOnline =
+    quote?.status === "sent" && !!quote.ownerTier && quote.ownerTier !== "free";
 
   const handleAcceptQuote = useCallback(async () => {
     if (!quote?.slug) return;
@@ -234,8 +242,8 @@ export default function PublicQuotePage({ params }: PageProps) {
       {/* Fixed bottom bar — stacks watermark, accept button, and accepted confirmation */}
       {(quote.showWatermark || quote.status === "sent" || quote.status === "accepted") && (
         <div className="fixed bottom-0 inset-x-0 z-40">
-          {/* Accept button — only for "sent" quotes */}
-          {quote.status === "sent" && (
+          {/* Accept button — "sent" quotes whose creator is on a paid plan */}
+          {canAcceptOnline && (
             <div className="bg-white border-t border-border p-4 shadow-lg">
               <div className="max-w-2xl mx-auto">
                 <Button
@@ -254,6 +262,24 @@ export default function PublicQuotePage({ params }: PageProps) {
                     </>
                   )}
                 </Button>
+              </div>
+            </div>
+          )}
+
+          {/* No online acceptance on this quote — give the customer a way to
+              respond rather than a dead bar. Says nothing about why. */}
+          {quote.status === "sent" && !canAcceptOnline && quote.ownerProfile?.phone && (
+            <div className="bg-white border-t border-border p-4 shadow-lg">
+              <div className="max-w-2xl mx-auto">
+                <a
+                  href={`tel:${quote.ownerProfile.phone.replace(/\s+/g, "")}`}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-md bg-secondary text-base font-semibold text-white hover:bg-secondary/90"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  Ring {quote.ownerProfile.businessName || "the tradie"} to accept
+                </a>
               </div>
             </div>
           )}

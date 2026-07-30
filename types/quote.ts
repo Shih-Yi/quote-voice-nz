@@ -58,6 +58,10 @@ export interface Quote {
 
   // Watermark flag — true when quote creator is on free tier
   showWatermark?: boolean;
+  // Quote creator's subscription tier, resolved from the cloud on public views.
+  // Drives whether the customer is offered online acceptance. Undefined means
+  // "not resolved yet" (offline, or a local-only quote).
+  ownerTier?: "free" | "pro" | "team";
 }
 
 export interface QuoteAttachment {

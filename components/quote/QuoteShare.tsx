@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { formatNZD } from "@/lib/utils/currency";
+import { useSubscription } from "@/hooks/useSubscription";
 import { getSyncQueue } from "@/lib/storage/quotes";
 import { on, KSQ_EVENTS } from "@/lib/events";
 import type { Quote } from "@/types/quote";
@@ -14,6 +14,7 @@ interface QuoteShareProps {
 }
 
 export function QuoteShare({ quote }: QuoteShareProps) {
+  const { isPaid, isLoading: subLoading } = useSubscription();
   const [isSending, setIsSending] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [emailTo, setEmailTo] = useState(quote.customerEmail || "");
@@ -99,15 +100,15 @@ export function QuoteShare({ quote }: QuoteShareProps) {
 
     setIsSending(true);
     try {
+      // Only the quote id and the destination go over the wire. The subject,
+      // link, amount and sender name are all derived server-side from the
+      // stored quote — the client cannot dictate what the email says.
       const res = await fetch("/api/send-quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          quoteId: quote.id,
           to: emailTo.trim(),
-          customerName: quote.customerName,
-          quoteUrl: shareUrl,
-          total: formatNZD(quote.total),
-          providerName: quote.providerDetails?.businessName || quote.ownerProfile?.businessName,
         }),
       });
 
@@ -115,7 +116,7 @@ export function QuoteShare({ quote }: QuoteShareProps) {
         toast.success("Quote sent via email!");
         setShowEmailInput(false);
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         toast.error(data.error || "Failed to send email");
       }
     } catch {
@@ -123,10 +124,29 @@ export function QuoteShare({ quote }: QuoteShareProps) {
     } finally {
       setIsSending(false);
     }
-  }, [emailTo, quote, shareUrl]);
+  }, [emailTo, quote.id]);
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Free-tier limitation, stated on the owner's side before they send.
+          The customer never sees a paywall — their copy of the quote simply
+          has no Accept button, and shows the contact details instead. */}
+      {!subLoading && !isPaid && (
+        <div className="flex gap-2 rounded-md border border-border bg-bg p-3 text-xs text-text-muted">
+          <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>
+            On the free plan your customer can view this quote but can&apos;t
+            accept it online — they&apos;ll need to ring or text you back.{" "}
+            <a href="/pricing" className="text-primary underline font-medium hover:text-primary-dark">
+              Upgrade to Pro
+            </a>{" "}
+            to let them accept with one tap.
+          </span>
+        </div>
+      )}
+
       {blockedOffline && (
         <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

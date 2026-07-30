@@ -40,12 +40,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Free-tier owners cannot have quotes accepted (Accepted status is Pro+)
+    // Online acceptance is a paid feature of the owner's plan. The UI already
+    // withholds the Accept button in that case (see canAcceptOnline in
+    // app/q/[slug]/page.tsx); this is the server-side backstop for anyone
+    // calling the API directly.
+    //
+    // The message stays neutral on purpose. The caller here is the *customer*,
+    // who can neither upgrade nor be told about the tradie's billing status —
+    // naming the plan would leak the owner's subscription tier to a third party.
     if (quoteRow.user_id) {
       const ownerTier = await getUserTier(quoteRow.user_id);
       if (ownerTier === "free") {
+        console.warn(
+          `[/api/accept-quote] TIER_BLOCKED slug=${slug} owner=${quoteRow.user_id}`
+        );
         return NextResponse.json(
-          { error: "Quote acceptance requires a Pro or Team plan. Please ask the tradie to upgrade." },
+          { error: "This quote can't be accepted online. Please contact the sender directly." },
           { status: 403 }
         );
       }

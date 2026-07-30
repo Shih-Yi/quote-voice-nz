@@ -395,8 +395,8 @@ export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
   const local = quotes.find((q) => q.slug === slug);
 
   // Fetch cloud copy to enrich metadata that isn't persisted locally
-  // (showWatermark — derived from creator's subscription tier — and ownerProfile).
-  // Falls back to local-only when offline.
+  // (showWatermark and ownerTier — both derived from the creator's subscription
+  // — and ownerProfile). Falls back to local-only when offline.
   const cloudQuote = await getQuoteBySlugFromSupabase(slug).catch(() => null);
 
   if (local) {
@@ -405,6 +405,7 @@ export async function getQuoteBySlug(slug: string): Promise<Quote | undefined> {
         ...local,
         showWatermark: cloudQuote.showWatermark,
         ownerProfile: cloudQuote.ownerProfile,
+        ownerTier: cloudQuote.ownerTier,
       };
     }
     return local;

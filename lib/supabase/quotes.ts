@@ -23,12 +23,14 @@ export interface SupabaseQuoteRow {
   version: number;             // Version number
   created_at: string;
   updated_at: string;
-  // Joined owner profile fields (only present on get_quote_by_slug RPC rows)
+  // Joined owner profile fields (only present on get_quote_by_slug RPC rows).
+  // owner_bank_account is deliberately absent — migration 018 removed it from
+  // the public RPC. Bank details reach the customer only when the tradie put
+  // them on that specific quote via provider_details.
   owner_business_name?: string | null;
   owner_phone?: string | null;
   owner_email?: string | null;
   owner_address?: string | null;
-  owner_bank_account?: string | null;
   owner_subscription_tier?: string | null;
 }
 
@@ -40,10 +42,17 @@ interface SupabaseQuoteItem {
   total: number;
 }
 
+export type OwnerTier = "free" | "pro" | "team";
+
 interface OwnerProfileResult {
   profile: UserProfile | undefined;
-  /** "free" | "pro" | "team" — defaults to "free" when unknown */
-  tier: string;
+  /** Defaults to "free" when absent or unrecognised — never fail open to a
+   *  paid tier on the strength of an unexpected DB value. */
+  tier: OwnerTier;
+}
+
+function normaliseTier(value: string | null | undefined): OwnerTier {
+  return value === "pro" || value === "team" ? value : "free";
 }
 
 // Extract owner profile/tier from a JOINed RPC row (no extra round trip)
@@ -54,9 +63,9 @@ function extractOwnerFromRow(row: SupabaseQuoteRow): OwnerProfileResult {
     row.owner_business_name ||
     row.owner_phone ||
     row.owner_email ||
-    row.owner_address ||
-    row.owner_bank_account;
+    row.owner_address;
 
+  // No bankAccount here by design — the public RPC no longer returns it.
   const profile: UserProfile | undefined = hasAny
     ? {
         id: row.user_id,
@@ -64,11 +73,10 @@ function extractOwnerFromRow(row: SupabaseQuoteRow): OwnerProfileResult {
         phone: row.owner_phone ?? undefined,
         email: row.owner_email ?? undefined,
         address: row.owner_address ?? undefined,
-        bankAccount: row.owner_bank_account ?? undefined,
       }
     : undefined;
 
-  return { profile, tier: row.owner_subscription_tier ?? "free" };
+  return { profile, tier: normaliseTier(row.owner_subscription_tier) };
 }
 
 // Fallback fetch for code paths that don't JOIN profiles (e.g. direct table SELECT)
@@ -93,7 +101,7 @@ async function fetchOwnerProfile(supabase: any, userId: string | null): Promise<
           address: data.address,
           bankAccount: data.bank_account,
         },
-        tier: data.subscription_tier ?? "free",
+        tier: normaliseTier(data.subscription_tier),
       };
     }
   } catch {
@@ -157,6 +165,10 @@ export async function getQuoteBySlugFromSupabase(slug: string): Promise<Quote | 
     const quote = fromSupabaseFormat(row);
     const { profile, tier } = extractOwnerFromRow(row);
     quote.ownerProfile = profile;
+    // Creator's plan. Anonymous quotes count as free. The public page uses this
+    // to decide whether online acceptance is available, so that a free-tier
+    // limitation never surfaces as a paywall in front of the customer.
+    quote.ownerTier = tier;
     // Show watermark when creator is on free tier (or no user = anonymous)
     quote.showWatermark = !quote.userId || tier === "free";
 
