@@ -36,9 +36,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Rule 1 — global daily cap. Checked first so a flood doesn't waste DB
-    // round-trips on per-user quota lookups.
-    const globalGuard = await checkGlobalTranscribeCap();
+    // Identify the caller first so the global cap can charge the right pool.
+    // Anonymous callers cost nothing extra here — no tier lookup is needed
+    // for them, so a flood still short-circuits after one cheap session read.
+    const user = await getCurrentUserServer();
+    const { getMonthlyUsage, getUserTier, TIER_LIMITS } = await import(
+      "@/lib/supabase/subscription"
+    );
+    const tier = user ? await getUserTier(user.id) : "free";
+    const isPaid = tier !== "free";
+
+    // Rule 1 — global daily cap, split into free and paid pools. A single
+    // shared counter meant anonymous traffic could exhaust the day's
+    // allowance and lock paying customers out until UTC midnight.
+    const globalGuard = await checkGlobalTranscribeCap(isPaid);
     if (!globalGuard.allowed) {
       return NextResponse.json(
         {
@@ -48,8 +59,6 @@ export async function POST(request: NextRequest) {
         { status: 503, headers: { "Retry-After": String(globalGuard.retryAfter) } }
       );
     }
-
-    const user = await getCurrentUserServer();
 
     // Anonymous users: layered daily quotas (Rules 2 + 3).
     if (!user) {
@@ -112,10 +121,6 @@ export async function POST(request: NextRequest) {
     // every attempt — the exact situation this app is built for.
     let dailyQuotaLimit: number | null = null;
     if (user) {
-      const { getMonthlyUsage, getUserTier, TIER_LIMITS } = await import(
-        "@/lib/supabase/subscription"
-      );
-      const tier = await getUserTier(user.id);
       const limits = TIER_LIMITS[tier];
       const limit = limits.quotesPerMonth;
       const usage = await getMonthlyUsage(user.id);
@@ -200,13 +205,20 @@ export async function POST(request: NextRequest) {
         error.message.includes("Invalid API Key") ||
         error.message.includes("401")
       ) {
+        // Our misconfiguration, not the caller's. The old message named the
+        // provider and the exact env var to anyone who could trigger it.
         return NextResponse.json(
-          { error: "Invalid API key. Please check your GROQ_API_KEY." },
-          { status: 401 }
+          { error: "Service temporarily unavailable" },
+          { status: 503 }
         );
       }
 
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      // Provider errors can include request ids and model details — logged
+      // above and sent to Sentry, but not returned.
+      return NextResponse.json(
+        { error: "Failed to transcribe audio" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(

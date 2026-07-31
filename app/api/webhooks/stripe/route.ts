@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
-import { upsertSubscription } from "@/lib/supabase/subscription";
+import {
+  upsertSubscription,
+  claimStripeEvent,
+  releaseStripeEvent,
+  getLastStripeEventAt,
+} from "@/lib/supabase/subscription";
 import type { SubscriptionTier, SubscriptionStatus } from "@/lib/supabase/subscription";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
@@ -35,10 +40,28 @@ type SubscriptionWithBilling = Stripe.Subscription & {
   current_period_end?: number;
 };
 
-async function handleSubscriptionEvent(sub: Stripe.Subscription) {
+/**
+ * Stripe does not guarantee delivery order. Applying an event older than the
+ * one already reflected in the row would, for example, restore a cancelled
+ * subscription to active because a stale `updated` landed after `deleted`.
+ */
+async function isStaleEvent(userId: string, eventCreatedAt: Date): Promise<boolean> {
+  const last = await getLastStripeEventAt(userId);
+  if (!last) return false;
+  return eventCreatedAt.getTime() < new Date(last).getTime();
+}
+
+async function handleSubscriptionEvent(sub: Stripe.Subscription, eventCreatedAt: Date) {
   const userId = sub.metadata?.userId;
   if (!userId) {
     console.error("Stripe webhook: subscription missing userId metadata", sub.id);
+    return;
+  }
+
+  if (await isStaleEvent(userId, eventCreatedAt)) {
+    console.warn(
+      `[stripe] Ignoring out-of-order event for user=${userId} sub=${sub.id}`
+    );
     return;
   }
 
@@ -62,12 +85,23 @@ async function handleSubscriptionEvent(sub: Stripe.Subscription) {
     currentPeriodEnd: periodEnd
       ? new Date(periodEnd * 1000).toISOString()
       : null,
+    lastStripeEventAt: eventCreatedAt.toISOString(),
   });
 }
 
-async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
+async function handleSubscriptionDeleted(
+  sub: Stripe.Subscription,
+  eventCreatedAt: Date
+) {
   const userId = sub.metadata?.userId;
   if (!userId) return;
+
+  if (await isStaleEvent(userId, eventCreatedAt)) {
+    console.warn(
+      `[stripe] Ignoring out-of-order delete for user=${userId} sub=${sub.id}`
+    );
+    return;
+  }
 
   const periodEnd = (sub as SubscriptionWithBilling).current_period_end;
 
@@ -81,6 +115,7 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
     currentPeriodEnd: periodEnd
       ? new Date(periodEnd * 1000).toISOString()
       : null,
+    lastStripeEventAt: eventCreatedAt.toISOString(),
   });
 }
 
@@ -108,6 +143,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // Stripe retries on any non-2xx and can redeliver after a success. Claim the
+  // event id first so a repeat is acknowledged without being applied twice.
+  const isFirstDelivery = await claimStripeEvent(event.id, event.type);
+  if (!isFirstDelivery) {
+    console.log(`[stripe] Duplicate delivery ignored: ${event.id}`);
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+
+  const eventCreatedAt = new Date(event.created * 1000);
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -120,11 +165,17 @@ export async function POST(request: NextRequest) {
 
       case "customer.subscription.created":
       case "customer.subscription.updated":
-        await handleSubscriptionEvent(event.data.object as Stripe.Subscription);
+        await handleSubscriptionEvent(
+          event.data.object as Stripe.Subscription,
+          eventCreatedAt
+        );
         break;
 
       case "customer.subscription.deleted":
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        await handleSubscriptionDeleted(
+          event.data.object as Stripe.Subscription,
+          eventCreatedAt
+        );
         break;
 
       default:
@@ -133,6 +184,10 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("Stripe webhook handler error:", err);
+    // We claimed the id before doing the work, so without this the retry
+    // Stripe is about to send would be discarded as a duplicate and the
+    // billing change would be lost.
+    await releaseStripeEvent(event.id);
     return NextResponse.json({ error: "Handler failed" }, { status: 500 });
   }
 

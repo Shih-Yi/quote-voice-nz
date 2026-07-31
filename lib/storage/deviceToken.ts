@@ -1,16 +1,7 @@
 import { get, set } from "idb-keyval";
+import { generateDeviceToken } from "@/lib/utils/randomId";
 
 const DEVICE_TOKEN_KEY = "ksq_device_token";
-
-// Generate a random device token (one per device/browser)
-function generateDeviceToken(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let token = "dt_";
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
-}
 
 // Get or create device token (singleton per device)
 export async function getDeviceToken(): Promise<string> {

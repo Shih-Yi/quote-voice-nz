@@ -12,6 +12,10 @@ import {
   LIMITS,
 } from "@/lib/costGuard";
 
+// Roughly 20x a two-minute transcript. Generous for legitimate input, but
+// bounds what a single call can cost.
+const MAX_TEXT_LEN = 20_000;
+
 function getClientIp(request: NextRequest): string {
   return (
     request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -131,6 +135,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // The cost guards above count *requests*; nothing bounded the size of one.
+    // A 500KB body is ~125k tokens of gpt-4o-mini per call, and this route
+    // allows 15/min. Two minutes of speech — the recording ceiling — is a few
+    // thousand characters, so this is far above any legitimate transcript.
+    if (text.length > MAX_TEXT_LEN) {
+      return NextResponse.json(
+        { error: `Text exceeds maximum length (${MAX_TEXT_LEN})` },
+        { status: 413 }
+      );
+    }
+
     // Logged-in: tier monthly quota check only — no increment, since the paired
     // /api/transcribe call already counted this quote. Avoids double-charging
     // a single quote when both routes are hit.
@@ -198,14 +213,18 @@ export async function POST(request: NextRequest) {
       }
 
       if (error.message.includes("API key") || error.message.includes("401") || error.message.includes("Unauthorized")) {
+        // Server misconfiguration, not the caller's problem — and naming the
+        // provider or the variable tells an attacker what we run.
         return NextResponse.json(
-          { error: "Invalid OpenAI API key" },
-          { status: 401 }
+          { error: "Service temporarily unavailable" },
+          { status: 503 }
         );
       }
 
+      // Provider messages can carry model names, org ids and request ids.
+      // They belong in the log and in Sentry, not in the response.
       return NextResponse.json(
-        { error: error.message },
+        { error: "Failed to extract quote data" },
         { status: 500 }
       );
     }

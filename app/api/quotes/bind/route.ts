@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     if (selectError) {
       console.error("[/api/quotes/bind] Select error:", selectError);
       return NextResponse.json(
-        { error: selectError.message },
+        { error: "Failed to bind quotes" },
         { status: 500 }
       );
     }
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("[/api/quotes/bind] Error:", error);
       return NextResponse.json(
-        { error: error.message },
+        { error: "Failed to bind quotes" },
         { status: 500 }
       );
     }

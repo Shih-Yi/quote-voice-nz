@@ -4,6 +4,12 @@ import { rateLimit } from "@/lib/rateLimit";
 import { claimIdempotencyKey } from "@/lib/idempotency";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
+import { generateRandomSlug, isValidSlug } from "@/lib/utils/randomId";
+import {
+  checkAnonQuoteDeviceQuota,
+  checkAnonQuoteIpQuota,
+  LIMITS,
+} from "@/lib/costGuard";
 import {
   checkAndIncrementUsage,
   getMonthlyUsage,
@@ -50,12 +56,17 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function generateRandomSlug(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 8 }, () =>
-    chars.charAt(Math.floor(Math.random() * chars.length))
-  ).join("");
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers?.get?.("x-real-ip") ||
+    "unknown"
+  );
 }
+
+// Slug generation lives in lib/utils/randomId — it is CSPRNG-backed because a
+// slug is the only thing standing between a stranger and the customer's
+// contact details on /q/[slug].
 
 function isSlugConflictError(error: { code?: string; message?: string }): boolean {
   // PostgreSQL unique_violation = 23505; also check message for slug constraint
@@ -71,6 +82,10 @@ const MAX_ADDRESS_LEN = 500;
 const MAX_NOTES_LEN = 5000;
 const MAX_DESCRIPTION_LEN = 1000;
 const MAX_ITEMS = 100;
+// provider_details is free-form JSONB written straight from the client. Cap
+// its serialised size so a broken or hostile client cannot park megabytes in
+// the row (and in every log line that echoes it).
+const MAX_PROVIDER_DETAILS_BYTES = 4000;
 
 function lenError(field: string, max: number): string {
   return `${field} exceeds maximum length (${max})`;
@@ -162,6 +177,26 @@ export async function POST(request: NextRequest) {
         { error: `items exceeds maximum (${MAX_ITEMS})` },
         { status: 400 }
       );
+    }
+
+    // The slug goes into a public URL and carries a UNIQUE constraint, so it
+    // was the one client-supplied string with neither a length nor a charset
+    // check. Legacy 8-character slugs still validate.
+    if (body.slug !== undefined && !isValidSlug(body.slug)) {
+      return NextResponse.json(
+        { error: "slug must be 6-32 lowercase letters or digits" },
+        { status: 400 }
+      );
+    }
+
+    if (body.providerDetails != null) {
+      const serialised = JSON.stringify(body.providerDetails);
+      if (serialised.length > MAX_PROVIDER_DETAILS_BYTES) {
+        return NextResponse.json(
+          { error: lenError("providerDetails", MAX_PROVIDER_DETAILS_BYTES) },
+          { status: 400 }
+        );
+      }
     }
 
     // Recompute item totals and items_sum server-side. The client sends total for
@@ -325,6 +360,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Anonymous NEW rows. The voice path is bounded by the device/IP caps in
+    // /api/transcribe, but a manually-typed quote never touches that route, so
+    // an anonymous caller had no ceiling here at all beyond the 30/min burst
+    // limit. These rows are also the ones cleanup_anon_orphan_quotes reaps, so
+    // an unbounded path fills the table with rows nobody can be billed for.
+    // Limits are deliberately looser than the transcribe ones — typing costs
+    // us no Groq spend, this is about table growth.
+    if (!user && !existing) {
+      // body.token is the device token — already required above and already
+      // hashed for the ownership check, so there is nothing extra to send.
+      const deviceGuard = await checkAnonQuoteDeviceQuota(body.token);
+      if (!deviceGuard.allowed) {
+        console.warn(`[/api/quotes] ${op} ANON_DEVICE_QUOTA id=${body.id}`);
+        return NextResponse.json(
+          {
+            error: "anon_quota_exceeded",
+            action: "login_required",
+            message: `Free limit reached (${LIMITS.ANON_QUOTE_DEVICE_DAILY}/day). Please log in to keep creating quotes.`,
+            limit: LIMITS.ANON_QUOTE_DEVICE_DAILY,
+          },
+          { status: 429, headers: { "Retry-After": String(deviceGuard.retryAfter) } }
+        );
+      }
+
+      const ipGuard = await checkAnonQuoteIpQuota(getClientIp(request));
+      if (!ipGuard.allowed) {
+        console.warn(`[/api/quotes] ${op} ANON_IP_QUOTA id=${body.id}`);
+        return NextResponse.json(
+          {
+            error: "anon_quota_exceeded",
+            action: "login_required",
+            message: `Daily limit reached from this network (${LIMITS.ANON_QUOTE_IP_DAILY}/day). Please log in to keep creating quotes.`,
+            limit: LIMITS.ANON_QUOTE_IP_DAILY,
+          },
+          { status: 429, headers: { "Retry-After": String(ipGuard.retryAfter) } }
+        );
+      }
+    }
+
     // Server-side quota gate for logged-in users on NEW quote rows. This route
     // is the single accounting point for quotes_created: every quote reaches
     // it exactly once regardless of how it was authored, so voice and
@@ -420,10 +494,11 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Non-slug error — fail immediately
+      // Non-slug error — fail immediately. Postgres messages name the schema,
+      // table, column and constraint; keep them in the log, not the response.
       console.error("[/api/quotes] Upsert error:", error);
       return NextResponse.json(
-        { error: error.message },
+        { error: "Failed to save quote" },
         { status: 500 }
       );
     }
@@ -581,7 +656,7 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       console.error("[/api/quotes] Delete error:", error);
       return NextResponse.json(
-        { error: error.message },
+        { error: "Failed to delete quote" },
         { status: 500 }
       );
     }

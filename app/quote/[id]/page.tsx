@@ -19,6 +19,7 @@ import { updateUserProfile } from "@/lib/supabase/profile";
 import { mutate as swrMutate } from "swr";
 import { useAuth } from "@/hooks/useAuth";
 import { useSubscription } from "@/hooks/useSubscription";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/types/quote";
 import type { Quote } from "@/types/quote";
 
 interface PageProps {
@@ -82,6 +83,24 @@ export default function QuoteEditorPage({ params }: PageProps) {
     }
     loadQuote();
   }, [resolvedParams.id]);
+
+  // Validation mode: the extraction came back below the confidence threshold
+  // and the tradie has not yet signed it off. Clearing the score is the
+  // acknowledgement, so the banner does not nag on every visit.
+  const needsValidation =
+    quote?.extractionConfidence !== undefined &&
+    quote.extractionConfidence < LOW_CONFIDENCE_THRESHOLD;
+
+  const handleConfirmExtraction = useCallback(async () => {
+    if (!quote) return;
+    const confirmed: Quote = { ...quote, extractionConfidence: undefined };
+    setQuote(confirmed);
+    const result = await updateQuote(confirmed);
+    if (result.error) {
+      toast.error(result.error);
+      setQuote(quote);
+    }
+  }, [quote]);
 
   const handleSave = useCallback(async (updatedQuote: Quote, updateProfile?: boolean) => {
     setIsSaving(true);
@@ -330,6 +349,42 @@ export default function QuoteEditorPage({ params }: PageProps) {
             )}
           </div>
         </div>
+
+        {/* Validation mode — the AI was unsure about this extraction, so say
+            so where the tradie can act on it rather than in a toast that has
+            already disappeared by the time they get here. */}
+        {needsValidation && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <div className="flex gap-3">
+              <svg className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-900">
+                  Check these details before you send
+                </p>
+                <p className="mt-1 text-xs text-amber-800">
+                  The recording was hard to make out, so some names, quantities
+                  or prices may be wrong.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleConfirmExtraction}
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    Looks right
+                  </Button>
+                  {!isEditing && (
+                    <Button size="sm" variant="outline" onClick={handleEditClick}>
+                      Fix details
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Auth Modal */}
         <AuthModal

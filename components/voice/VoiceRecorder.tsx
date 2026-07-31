@@ -18,7 +18,9 @@ import { getDeviceToken } from "@/lib/storage/deviceToken";
 import { emit, KSQ_EVENTS } from "@/lib/events";
 import { calculateQuoteTotals, calculateItemTotal } from "@/lib/utils/gst";
 import { getDefaultGstInclusive } from "@/lib/storage/preferences";
+import { hapticError, hapticSuccess } from "@/lib/utils/haptics";
 import { compressToMp3 } from "@/lib/utils/audioCompress";
+import { LOW_CONFIDENCE_THRESHOLD } from "@/types/quote";
 import type { Quote, ExtractionResult } from "@/types/quote";
 
 interface VoiceRecorderProps {
@@ -164,6 +166,10 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           items,
           notes: extraction.notes ?? undefined,
           gstInclusive,
+          // Kept on the quote so the editor can flag uncertain extractions.
+          // Previously this only ever produced a toast that vanished before
+          // the user reached the fields it was warning about.
+          extractionConfidence: extraction.confidence,
           subtotal,
           gst,
           total,
@@ -188,11 +194,12 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
         setProcessingStatus("");
         resetRecording();
 
-        if (extraction.confidence < 0.6) {
+        if (extraction.confidence < LOW_CONFIDENCE_THRESHOLD) {
           toast.warning("Some details may need review", {
             description: "Please verify the extracted information",
           });
         } else {
+          hapticSuccess();
           toast.success("Quote created!");
         }
 
@@ -215,6 +222,9 @@ export function VoiceRecorder({ onQuoteCreated }: VoiceRecorderProps) {
           if (persisted) {
             await removePendingAudio(pendingId).catch(() => {});
           }
+          // The tradie is one-handed on a noisy site and may not be looking at
+          // the screen; a toast on its own is easy to miss.
+          hapticError();
           toast.error("No speech detected", {
             description: "Please try recording again",
           });

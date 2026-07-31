@@ -24,6 +24,22 @@ vi.mock("@/lib/idempotency", () => ({
   claimIdempotencyKey: (...a: unknown[]) => mockClaimIdempotencyKey(...a),
 }));
 
+// --- Mock anonymous quote quotas (allow by default; costGuard has its own
+//     tests — here we only care that the route consults it) ---
+const mockCheckAnonQuoteDeviceQuota = vi
+  .fn()
+  .mockResolvedValue({ allowed: true, remaining: 9, retryAfter: 0 });
+const mockCheckAnonQuoteIpQuota = vi
+  .fn()
+  .mockResolvedValue({ allowed: true, remaining: 19, retryAfter: 0 });
+
+vi.mock("@/lib/costGuard", () => ({
+  LIMITS: { ANON_QUOTE_DEVICE_DAILY: 10, ANON_QUOTE_IP_DAILY: 20 },
+  checkAnonQuoteDeviceQuota: (...a: unknown[]) =>
+    mockCheckAnonQuoteDeviceQuota(...a),
+  checkAnonQuoteIpQuota: (...a: unknown[]) => mockCheckAnonQuoteIpQuota(...a),
+}));
+
 // --- Mock auth (anonymous by default; override per test) ---
 const mockGetCurrentUserServer = vi.fn().mockResolvedValue(null);
 vi.mock("@/lib/supabase/auth-server", () => ({
@@ -99,6 +115,16 @@ describe("POST /api/quotes", () => {
     mockGetMonthlyUsage.mockResolvedValue({ quotesCreated: 0, emailsSent: 0 });
     mockGetUserTier.mockResolvedValue("free");
     mockCheckAndIncrementUsage.mockResolvedValue({ allowed: true, limit: 5, used: 1 });
+    mockCheckAnonQuoteDeviceQuota.mockResolvedValue({
+      allowed: true,
+      remaining: 9,
+      retryAfter: 0,
+    });
+    mockCheckAnonQuoteIpQuota.mockResolvedValue({
+      allowed: true,
+      remaining: 19,
+      retryAfter: 0,
+    });
   });
 
   it("returns 400 when id is missing", async () => {
@@ -604,6 +630,107 @@ describe("POST /api/quotes", () => {
       const res = await POST(req);
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe("slug and providerDetails validation", () => {
+    // The slug lands in a public URL and carries a UNIQUE constraint, but was
+    // the one client string with no length or charset check at all.
+    it.each([
+      ["too long", "a".repeat(33)],
+      ["uppercase", "ABC12345"],
+      ["path traversal", "../../etc"],
+      ["with a slash", "abc/def"],
+      ["empty-ish", "ab"],
+      ["not a string", 12345],
+    ])("rejects a %s slug", async (_label, slug) => {
+      const res = await POST(makeRequest("POST", validPayload({ slug })));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain("slug");
+    });
+
+    it("still accepts legacy 8-character slugs", async () => {
+      mockFrom.mockReturnValue(mockChain({ data: null, error: null }));
+      const res = await POST(makeRequest("POST", validPayload({ slug: "abc12345" })));
+      expect(res.status).not.toBe(400);
+    });
+
+    it("accepts the new 16-character slugs", async () => {
+      mockFrom.mockReturnValue(mockChain({ data: null, error: null }));
+      const res = await POST(
+        makeRequest("POST", validPayload({ slug: "a1b2c3d4e5f6g7h8" }))
+      );
+      expect(res.status).not.toBe(400);
+    });
+
+    it("rejects an oversized providerDetails blob", async () => {
+      const res = await POST(
+        makeRequest(
+          "POST",
+          validPayload({ providerDetails: { notes: "x".repeat(5000) } })
+        )
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain("providerDetails");
+    });
+  });
+
+  describe("anonymous creation quota", () => {
+    // Typed quotes never touch /api/transcribe, so before this the only
+    // ceiling on anonymous cloud rows was the 30/min burst limit.
+    it("blocks a new anonymous quote once the device cap is reached", async () => {
+      mockCheckAnonQuoteDeviceQuota.mockResolvedValue({
+        allowed: false,
+        remaining: 0,
+        retryAfter: 3600,
+      });
+
+      const res = await POST(makeRequest("POST", validPayload()));
+
+      expect(res.status).toBe(429);
+      const body = await res.json();
+      expect(body.error).toBe("anon_quota_exceeded");
+      expect(body.action).toBe("login_required");
+      expect(res.headers.get("Retry-After")).toBe("3600");
+    });
+
+    it("blocks on the network cap too", async () => {
+      mockCheckAnonQuoteIpQuota.mockResolvedValue({
+        allowed: false,
+        remaining: 0,
+        retryAfter: 3600,
+      });
+
+      const res = await POST(makeRequest("POST", validPayload()));
+      expect(res.status).toBe(429);
+      expect((await res.json()).error).toBe("anon_quota_exceeded");
+    });
+
+    it("does not charge the anonymous cap when editing an existing quote", async () => {
+      mockFrom.mockReturnValue(
+        mockChain({
+          data: {
+            owner_token_hash: nodeCreateHash("sha256")
+              .update("dt_test_token")
+              .digest("hex"),
+            user_id: null,
+            status: "draft",
+          },
+          error: null,
+        })
+      );
+
+      await POST(makeRequest("POST", validPayload()));
+      expect(mockCheckAnonQuoteDeviceQuota).not.toHaveBeenCalled();
+    });
+
+    it("does not apply the anonymous cap to signed-in users", async () => {
+      mockGetCurrentUserServer.mockResolvedValue({ id: "user-1" });
+      mockFrom.mockReturnValue(mockChain({ data: null, error: null }));
+
+      await POST(makeRequest("POST", validPayload()));
+      expect(mockCheckAnonQuoteDeviceQuota).not.toHaveBeenCalled();
+      expect(mockCheckAnonQuoteIpQuota).not.toHaveBeenCalled();
     });
   });
 });

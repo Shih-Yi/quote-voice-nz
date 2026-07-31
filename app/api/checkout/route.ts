@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
+import { rateLimit } from "@/lib/rateLimit";
 import { stripe, STRIPE_PRICES, type StripePriceKey } from "@/lib/stripe";
 import { getSubscriptionInfo } from "@/lib/supabase/subscription";
 
@@ -10,7 +11,14 @@ const VALID_PRICE_KEYS = new Set<StripePriceKey>([
   "team_yearly",
 ]);
 
+const TRIAL_PERIOD_DAYS = 14;
+
 export async function POST(request: NextRequest) {
+  // This route was the only mutating endpoint with no limiter of its own —
+  // each call creates a Stripe session and costs a subscription lookup.
+  const rateLimited = await rateLimit(request, { limit: 10, windowSeconds: 60 });
+  if (rateLimited) return rateLimited;
+
   const user = await getCurrentUserServer();
   if (!user) {
     return NextResponse.json(
@@ -44,6 +52,15 @@ export async function POST(request: NextRequest) {
     const info = await getSubscriptionInfo(user.id);
     const existingCustomerId = info.stripeCustomerId;
 
+    // One trial per account. Stripe grants trial_period_days on every
+    // subscription it is passed with, so offering it unconditionally let a
+    // user subscribe, cancel inside the trial, resubscribe and never pay.
+    // Any prior Stripe relationship — customer id, subscription id, or a
+    // recorded trial — means the free run has been used.
+    const hasTrialled = Boolean(
+      info.stripeCustomerId || info.stripeSubscriptionId || info.trialEndsAt
+    );
+
     const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
@@ -53,7 +70,7 @@ export async function POST(request: NextRequest) {
       customer_email: existingCustomerId ? undefined : user.email ?? undefined,
       customer: existingCustomerId ?? undefined,
       subscription_data: {
-        trial_period_days: 14,
+        ...(hasTrialled ? {} : { trial_period_days: TRIAL_PERIOD_DAYS }),
         metadata: { userId: user.id },
       },
       metadata: { userId: user.id },

@@ -183,6 +183,8 @@ export async function upsertSubscription(params: {
   billingInterval?: "month" | "year";
   trialEndsAt?: string | null;
   currentPeriodEnd?: string | null;
+  /** Stripe `created` time of the event this state came from (migration 019). */
+  lastStripeEventAt?: string | null;
 }): Promise<{ error: string | null }> {
   const supabase = getServerSupabase();
   if (!supabase) return { error: "Supabase not configured" };
@@ -196,9 +198,81 @@ export async function upsertSubscription(params: {
     billing_interval: params.billingInterval ?? "month",
     trial_ends_at: params.trialEndsAt ?? null,
     current_period_end: params.currentPeriodEnd ?? null,
+    last_stripe_event_at: params.lastStripeEventAt ?? null,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id" });
 
   if (error) return { error: error.message };
   return { error: null };
+}
+
+/**
+ * Claim a Stripe event id.
+ *
+ * @returns true when this delivery is the first — the caller should process it
+ * @returns false when it has already been handled and should be skipped
+ *
+ * Stripe retries on any non-2xx and can redeliver even after success, so the
+ * handler has to be able to recognise a repeat.
+ */
+export async function claimStripeEvent(
+  eventId: string,
+  eventType: string
+): Promise<boolean> {
+  const supabase = getServerSupabase();
+  // Without a database we cannot dedupe. Process the event rather than drop a
+  // billing signal on the floor — the writes it performs are idempotent.
+  if (!supabase) return true;
+
+  const { error } = await supabase
+    .from("stripe_events")
+    .insert({ id: eventId, type: eventType });
+
+  if (!error) return true;
+
+  // 23505 = unique_violation — we have seen this event before.
+  if ((error as { code?: string }).code === "23505") return false;
+
+  console.error("[stripe] Failed to record event id:", error.message);
+  return true;
+}
+
+/**
+ * Give a claimed event id back after the handler failed, so Stripe's retry is
+ * processed instead of being mistaken for a duplicate and dropped for good.
+ */
+export async function releaseStripeEvent(eventId: string): Promise<void> {
+  const supabase = getServerSupabase();
+  if (!supabase) return;
+
+  const { error } = await supabase.from("stripe_events").delete().eq("id", eventId);
+  if (error) {
+    // The retry will now be skipped as a duplicate. Loud, because it means a
+    // billing signal was lost and the subscription row may be stale.
+    console.error(
+      `[stripe] FAILED TO RELEASE event ${eventId} — a retry will be skipped:`,
+      error.message
+    );
+  }
+}
+
+/**
+ * The `created` timestamp of the newest Stripe event already applied to this
+ * user. Stripe does not guarantee delivery order, so anything older than this
+ * must be ignored — otherwise a late "active" update can resurrect a
+ * subscription that was already cancelled.
+ */
+export async function getLastStripeEventAt(
+  userId: string
+): Promise<string | null> {
+  const supabase = getServerSupabase();
+  if (!supabase) return null;
+
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("last_stripe_event_at")
+    .eq("user_id", userId)
+    .maybeSingle<{ last_stripe_event_at: string | null }>();
+
+  return data?.last_stripe_event_at ?? null;
 }

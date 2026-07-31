@@ -192,13 +192,35 @@ describe("POST /api/transcribe", () => {
     expect(response.status).toBe(429);
   });
 
-  it("returns 401 on invalid API key", async () => {
+  // A bad key is our misconfiguration, not the caller's. The old response was
+  // a 401 reading "Invalid API key. Please check your GROQ_API_KEY." — which
+  // named both the provider and the env var to anyone who could trigger it.
+  it("reports a bad API key as a server-side outage, naming nothing", async () => {
     mockCreate.mockRejectedValueOnce(new Error("Invalid API Key"));
 
     const file = new File(["audio-data"], "recording.webm", { type: "audio/webm" });
     const formData = makeFormData(file);
     const response = await POST(makeRequest(formData) as never);
-    expect(response.status).toBe(401);
+
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.error).toBe("Service temporarily unavailable");
+    expect(JSON.stringify(body)).not.toMatch(/groq|api[_ ]?key/i);
+  });
+
+  it("does not echo provider error text on an unexpected failure", async () => {
+    mockCreate.mockRejectedValueOnce(
+      new Error("upstream 500: model whisper-large-v3 req_abc123")
+    );
+
+    const file = new File(["audio-data"], "recording.webm", { type: "audio/webm" });
+    const response = await POST(makeRequest(makeFormData(file)) as never);
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("Failed to transcribe audio");
+    expect(JSON.stringify(body)).not.toContain("req_abc123");
+    expect(JSON.stringify(body)).not.toContain("whisper");
   });
 
   describe("quota boundaries", () => {

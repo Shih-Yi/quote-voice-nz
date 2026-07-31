@@ -1,3 +1,10 @@
+/**
+ * Extraction confidence below this puts the quote into validation mode:
+ * the editor flags it and asks the tradie to check the figures before
+ * sending. Defined by the error-handling policy in CLAUDE.md.
+ */
+export const LOW_CONFIDENCE_THRESHOLD = 0.6;
+
 export interface LineItem {
   id: string;
   description: string;
@@ -62,6 +69,11 @@ export interface Quote {
   // Drives whether the customer is offered online acceptance. Undefined means
   // "not resolved yet" (offline, or a local-only quote).
   ownerTier?: "free" | "pro" | "team";
+
+  // AI extraction confidence (0–1) for voice-created quotes. Below
+  // LOW_CONFIDENCE_THRESHOLD the editor shows a validation banner. Cleared
+  // once the tradie confirms the details, and absent on manually-typed quotes.
+  extractionConfidence?: number;
 }
 
 export interface QuoteAttachment {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rateLimit";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { getCurrentUserServer } from "@/lib/supabase/auth-server";
+import { profileUpdateSchema, firstIssueMessage } from "@/lib/schemas/profile";
 
 export async function GET(request: NextRequest) {
   const rateLimited = await rateLimit(request, { limit: 20, windowSeconds: 60 });
@@ -68,16 +69,31 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (body === null || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
+    // Previously every field went straight into the database: no length caps,
+    // no type check, and no format check on the bank account that the customer
+    // is asked to pay into.
+    const parsed = profileUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: firstIssueMessage(parsed.error) },
+        { status: 400 }
+      );
+    }
+
+    const input = parsed.data;
     const updateData = {
       id: user.id,
-      full_name: body.fullName ?? null,
-      business_name: body.businessName ?? null,
-      phone: body.phone ?? null,
-      email: body.email ?? null,
-      address: body.address ?? null,
-      bank_account: body.bankAccount ?? null,
+      full_name: input.fullName ?? null,
+      business_name: input.businessName ?? null,
+      phone: input.phone ?? null,
+      email: input.email ?? null,
+      address: input.address ?? null,
+      bank_account: input.bankAccount ?? null,
       updated_at: new Date().toISOString(),
     };
 
@@ -88,7 +104,7 @@ export async function PUT(request: NextRequest) {
     if (error) {
       console.error("[/api/profile] Upsert error:", error);
       return NextResponse.json(
-        { error: error.message },
+        { error: "Failed to update profile" },
         { status: 500 }
       );
     }

@@ -119,11 +119,58 @@ describe("POST /api/extract", () => {
     expect(response.status).toBe(429);
   });
 
-  it("returns 401 on API key error", async () => {
+  it("reports a bad API key as a server-side outage, naming nothing", async () => {
     mockGenerateObject.mockRejectedValueOnce(new Error("Invalid API key"));
     const request = makeRequest({ text: "Fix the kitchen tap, about 200 bucks" });
     const response = await POST(request as never);
-    expect(response.status).toBe(401);
+
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(JSON.stringify(body)).not.toMatch(/openai|api[_ ]?key/i);
+  });
+
+  it("does not echo provider error text on an unexpected failure", async () => {
+    mockGenerateObject.mockRejectedValueOnce(
+      new Error("org org_xyz789 exceeded gpt-4o-mini context")
+    );
+    const response = await POST(
+      makeRequest({ text: "Fix the kitchen tap, about 200 bucks" }) as never
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("Failed to extract quote data");
+    expect(JSON.stringify(body)).not.toContain("org_xyz789");
+  });
+
+  // Cost guards counted requests, never their size. A 500KB body is ~125k
+  // tokens per call, at 15 calls a minute.
+  it("rejects a body far larger than any real transcript", async () => {
+    const response = await POST(
+      makeRequest({ text: "x".repeat(20_001) }) as never
+    );
+
+    expect(response.status).toBe(413);
+    expect(mockGenerateObject).not.toHaveBeenCalled();
+  });
+
+  it("still accepts a long but plausible transcript", async () => {
+    mockGenerateObject.mockResolvedValueOnce({
+      object: {
+        customerName: "Dave",
+        customerPhone: null,
+        customerEmail: null,
+        customerAddress: null,
+        items: [{ description: "Fix kitchen tap", quantity: 1, unitPrice: 200 }],
+        notes: null,
+        confidence: 0.8,
+      },
+    } as never);
+
+    const response = await POST(
+      makeRequest({ text: "kitchen tap ".repeat(500) }) as never
+    );
+    expect(response.status).toBe(200);
   });
 
   describe("anonymous quota gating", () => {

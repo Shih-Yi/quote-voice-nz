@@ -13,6 +13,7 @@ import { mergeCloudQuote } from "./mergeQuote";
 import { preCacheQuotePage } from "@/lib/utils/swCache";
 import { logAudit } from "@/lib/utils/auditLog";
 import { calculateQuoteTotals } from "@/lib/utils/gst";
+import { generateRandomSlug } from "@/lib/utils/randomId";
 
 // Recalculate subtotal/gst/total from items to ensure local consistency.
 // The DB uses GENERATED ALWAYS columns so cloud data is always correct,
@@ -759,16 +760,16 @@ export async function getRecentQuotes(limit: number = 10): Promise<Quote[]> {
 // Generate unique slug — checks local storage (including tombstones) to avoid collisions.
 // Tombstoned quotes still occupy their slug on the server until cloud delete confirms.
 export async function generateSlug(): Promise<string> {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   const quotes = await getAllQuotesRaw();
   const existingSlugs = new Set(quotes.map((q) => q.slug).filter(Boolean));
 
+  // The local check only catches collisions with this device's own quotes;
+  // the server retries on the UNIQUE constraint. At 16 CSPRNG characters a
+  // genuine collision is not something that happens.
   let slug = "";
   let attempts = 0;
   do {
-    slug = Array.from({ length: 8 }, () =>
-      chars.charAt(Math.floor(Math.random() * chars.length))
-    ).join("");
+    slug = generateRandomSlug();
     attempts++;
   } while (existingSlugs.has(slug) && attempts < 10);
 

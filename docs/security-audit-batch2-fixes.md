@@ -136,14 +136,8 @@ free tier 的 `quotesPerDay` 可能被單一支錄音耗光，而師傅一張報
 
 ---
 
-## 未處理（第三批：成本與韌性）
+## 後續批次
 
-- 匿名使用者在 `/api/quotes` 無月配額；`cleanup_anon_orphan_quotes` 未排程
-- `GLOBAL_DAILY_TRANSCRIBES: 200` 寫死且與付費用戶共用；costGuard RPC 失敗一律 fail-open
-- slug 與 device token 使用 `Math.random()`，應改 CSPRNG 並把 slug 加長（目前 ≈ 2^41）
-- `/api/extract` 的 `text` 無長度上限
-- Stripe webhook 無事件去重與亂序保護
-- `/api/checkout` 無限流、試用期無條件發放（可重複拿 14 天）
-- 7 處回傳 provider 原始錯誤訊息
-- confidence < 0.6 僅 toast，未實作 CLAUDE.md 的 Validation Mode；ASR 失敗無觸覺回饋
-- 只有 1 支 route 用 zod，其餘手刻驗證；`/api/profile` PUT 零驗證（含 NZ 銀行帳號格式）
+第三批（成本與韌性）**已完成** —— 見
+[security-audit-batch3-fixes.md](./security-audit-batch3-fixes.md)。
+審查的 19 項發現至此全部處理完畢。

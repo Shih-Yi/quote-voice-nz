@@ -1172,10 +1172,19 @@ describe("quotes storage", () => {
   // ─── GENERATE SLUG ───────────────────────────────────
 
   describe("generateSlug", () => {
-    it("generates an 8-character slug", async () => {
+    // 16 base36 characters ≈ 2^82.7. The slug is the only gate on the public
+    // /q/[slug] page, and the old 8-character form was ≈ 2^41 — brute-forcible
+    // once enough quotes exist to make a hit likely.
+    it("generates a 16-character slug", async () => {
       const slug = await generateSlug();
-      expect(slug).toHaveLength(8);
+      expect(slug).toHaveLength(16);
       expect(slug).toMatch(/^[a-z0-9]+$/);
+    });
+
+    it("does not repeat itself across many draws", async () => {
+      const slugs = new Set<string>();
+      for (let i = 0; i < 200; i++) slugs.add(await generateSlug());
+      expect(slugs.size).toBe(200);
     });
 
     it("avoids collisions with existing slugs", async () => {
