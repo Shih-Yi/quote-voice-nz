@@ -1,3 +1,7 @@
+-- NOTE: Superseded by 020_fix_transcribe_quota_api_schema.sql.
+-- Migration 012 originally created objects in the 'public' schema, but the server
+-- client uses schema 'api'. See 020 for the active schema definition.
+--
 -- Daily quota tracking for /api/transcribe. Single table serves two purposes:
 --   1. Enforcement — via the atomic increment_transcribe_quota_if_allowed RPC
 --   2. Analytics    — via ordinary SQL aggregates over scope/date
