@@ -4,14 +4,14 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  title: "Free Plumbing Quote Template NZ — Download or Use Online | ChurQuote",
+  title: "Free Plumbing Quote Template NZ — Download or Use Online | QuoteTalk",
   description:
-    "Download a free plumbing quote template for NZ. GST-calculated, professional layout. Common line items included. Or generate quotes by voice in 60 seconds with ChurQuote.",
+    "Download a free plumbing quote template for NZ. GST-calculated, professional layout. Common line items included. Or generate quotes by voice in 60 seconds with QuoteTalk.",
   openGraph: {
     title: "Free Plumbing Quote Template NZ — Download or Use Online",
     description:
       "Download a free plumbing quote template for NZ. GST-calculated, professional layout. Common line items included.",
-    url: "https://churquote.co.nz/templates/plumbing-quote-nz",
+    url: "https://quotetalk.co.nz/templates/plumbing-quote-nz",
   },
 };
 
@@ -102,7 +102,7 @@ export default function PlumbingQuoteTemplatePage() {
                 Download a free plumbing quote template designed for NZ tradies — with GST
                 calculated, professional layout, and common line items pre-filled. Or skip the
                 template entirely and generate your next plumbing quote by voice in 60 seconds
-                with ChurQuote.
+                with QuoteTalk.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
@@ -432,14 +432,14 @@ export default function PlumbingQuoteTemplatePage() {
               that&apos;s hours of admin.
             </p>
             <p className="text-white/80 mb-6">
-              ChurQuote lets you speak your plumbing quote out loud — while you&apos;re still on site,
+              QuoteTalk lets you speak your plumbing quote out loud — while you&apos;re still on site,
               even with zero signal — and it produces a professional, GST-calculated PDF in 60 seconds.
             </p>
             <div className="grid sm:grid-cols-2 gap-4 mb-8">
               {[
                 ["Tap the mic.", "Start recording."],
                 ["Speak naturally.", "\"Two grand for the hot water cylinder, 150 bucks for callout, three hours labour at $100.\""],
-                ["Review and confirm.", "ChurQuote parses your words into line items with GST calculated."],
+                ["Review and confirm.", "QuoteTalk parses your words into line items with GST calculated."],
                 ["Send.", "Share via SMS, WhatsApp, or email before leaving the driveway."],
               ].map(([step, detail], i) => (
                 <div key={i} className="bg-white/10 rounded-lg p-4">
@@ -449,7 +449,7 @@ export default function PlumbingQuoteTemplatePage() {
               ))}
             </div>
             <p className="text-white/70 text-sm mb-6">
-              ChurQuote understands Kiwi plumbing terminology, handles 15% NZ GST automatically,
+              QuoteTalk understands Kiwi plumbing terminology, handles 15% NZ GST automatically,
               and works offline — so you can quote even when you&apos;re in that basement with no signal.
             </p>
             <Link
@@ -510,7 +510,7 @@ export default function PlumbingQuoteTemplatePage() {
                 className="block bg-white border border-border rounded-lg p-5 hover:border-primary transition-colors"
               >
                 <p className="font-semibold text-text mb-1">Quoting software for plumbers</p>
-                <p className="text-sm text-text-muted">Compare ChurQuote vs Tradify for NZ tradies</p>
+                <p className="text-sm text-text-muted">Compare QuoteTalk vs Tradify for NZ tradies</p>
               </Link>
               <Link
                 href="/"

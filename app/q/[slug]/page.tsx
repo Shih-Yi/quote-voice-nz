@@ -117,10 +117,10 @@ export default function PublicQuotePage({ params }: PageProps) {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">KQ</span>
+              <span className="text-white font-bold text-sm">QT</span>
             </div>
             <div>
-              <h1 className="font-semibold text-text">KiwiSpeakQuote</h1>
+              <h1 className="font-semibold text-text">QuoteTalk</h1>
               <p className="text-sm text-text-muted">Quote</p>
             </div>
           </div>
@@ -231,7 +231,7 @@ export default function PublicQuotePage({ params }: PageProps) {
 
         {/* Footer */}
         <div className={`mt-8 text-center text-sm text-text-muted ${quote.showWatermark ? "pb-24" : "pb-8"}`}>
-          <p>Generated with KiwiSpeakQuote</p>
+          <p>Generated with QuoteTalk</p>
           <p className="mt-1">
             <Link href="/" className="text-primary hover:text-primary-dark">
               Create your own quotes
@@ -303,7 +303,7 @@ export default function PublicQuotePage({ params }: PageProps) {
               Brand line shows to everyone; Upgrade CTA is owner-only. */}
           {quote.showWatermark && (
             <div className="bg-primary text-white text-center py-2 px-4 text-xs">
-              <span>Created with ChurQuote &mdash; The voice-to-quote app for NZ tradies</span>
+              <span>Created with QuoteTalk &mdash; The voice-to-quote app for NZ tradies</span>
               {isOwner && (
                 <>
                   <span> &mdash; </span>

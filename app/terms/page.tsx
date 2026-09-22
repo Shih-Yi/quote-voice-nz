@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — KiwiSpeakQuote",
+  title: "Terms of Service — QuoteTalk",
   description:
-    "Terms of Service for KiwiSpeakQuote (KSQ), the voice-to-quote app for New Zealand tradies.",
+    "Terms of Service for QuoteTalk, the voice-to-quote app for New Zealand tradies.",
 };
 
 const LAST_UPDATED = "18 April 2026";
@@ -17,9 +17,9 @@ export default function TermsPage() {
         <p className="text-sm text-text-muted mb-8">Last updated: {LAST_UPDATED}</p>
 
         <section className="mb-8">
-          <h2 className="text-xl font-semibold text-text mb-3">1. About KiwiSpeakQuote</h2>
+          <h2 className="text-xl font-semibold text-text mb-3">1. About QuoteTalk</h2>
           <p className="text-text-muted">
-            KiwiSpeakQuote (&quot;KSQ&quot;, &quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is a voice-to-quote
+            QuoteTalk (&quot;we&quot;, &quot;our&quot;, &quot;us&quot;) is a voice-to-quote
             software service for New Zealand tradespeople. By creating an account or using the
             service, you agree to these Terms.
           </p>
@@ -29,7 +29,7 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold text-text mb-3">2. Eligibility &amp; Account</h2>
           <p className="text-text-muted">
             You must be at least 18 years old and operating a lawful trade or business in New
-            Zealand to use KSQ. You are responsible for keeping your login credentials secure and
+            Zealand to use QuoteTalk. You are responsible for keeping your login credentials secure and
             for all activity under your account.
           </p>
         </section>
@@ -128,8 +128,8 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold text-text mb-3">11. Contact</h2>
           <p className="text-text-muted">
             Questions? Email{" "}
-            <a href="mailto:support@ksq.nz" className="text-primary hover:underline">
-              support@ksq.nz
+            <a href="mailto:support@quotetalk.nz" className="text-primary hover:underline">
+              support@quotetalk.nz
             </a>
             . See also our{" "}
             <Link href="/privacy" className="text-primary hover:underline">

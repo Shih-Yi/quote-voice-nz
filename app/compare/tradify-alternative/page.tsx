@@ -4,24 +4,24 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  title: "Best Tradify Alternative for NZ Tradies (2026) — ChurQuote",
+  title: "Best Tradify Alternative for NZ Tradies (2026) — QuoteTalk",
   description:
-    "Looking for a Tradify alternative in NZ? ChurQuote lets tradies send professional quotes in 60 seconds by voice. No laptop, no training, works offline. Free to try.",
+    "Looking for a Tradify alternative in NZ? QuoteTalk lets tradies send professional quotes in 60 seconds by voice. No laptop, no training, works offline. Free to try.",
   openGraph: {
-    title: "Best Tradify Alternative for NZ Tradies (2026) — ChurQuote",
+    title: "Best Tradify Alternative for NZ Tradies (2026) — QuoteTalk",
     description:
-      "ChurQuote lets NZ tradies send professional quotes in 60 seconds by voice. Works offline. No training required.",
-    url: "https://churquote.co.nz/compare/tradify-alternative",
+      "QuoteTalk lets NZ tradies send professional quotes in 60 seconds by voice. Works offline. No training required.",
+    url: "https://quotetalk.co.nz/compare/tradify-alternative",
   },
 };
 
 const schemaMarkup = {
   "@context": "https://schema.org",
   "@type": "Product",
-  name: "ChurQuote",
+  name: "QuoteTalk",
   description:
     "Voice-to-quote tool for NZ tradies. Send professional quotes in 60 seconds by voice. GST auto-calculated. Works offline.",
-  url: "https://churquote.co.nz",
+  url: "https://quotetalk.co.nz",
   offers: {
     "@type": "Offer",
     priceCurrency: "NZD",
@@ -35,23 +35,23 @@ const schemaMarkup = {
         name: "What is the best Tradify alternative in NZ?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "For NZ tradies who primarily need fast, professional quoting, ChurQuote is the best Tradify alternative. It uses voice-to-quote technology to produce a professional quote in 60 seconds from your phone — no laptop, no training, works offline. Tradify is better suited to larger trade businesses that need full job management (scheduling, invoicing, timesheets).",
+          text: "For NZ tradies who primarily need fast, professional quoting, QuoteTalk is the best Tradify alternative. It uses voice-to-quote technology to produce a professional quote in 60 seconds from your phone — no laptop, no training, works offline. Tradify is better suited to larger trade businesses that need full job management (scheduling, invoicing, timesheets).",
         },
       },
       {
         "@type": "Question",
-        name: "Is ChurQuote cheaper than Tradify?",
+        name: "Is QuoteTalk cheaper than Tradify?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "ChurQuote is focused on quoting only, with a lower price point than Tradify. Tradify starts at $49 NZD/month/user for full job management. ChurQuote is currently free during early access.",
+          text: "QuoteTalk is focused on quoting only, with a lower price point than Tradify. Tradify starts at $49 NZD/month/user for full job management. QuoteTalk is currently free during early access.",
         },
       },
       {
         "@type": "Question",
-        name: "Does ChurQuote work without internet?",
+        name: "Does QuoteTalk work without internet?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Yes. ChurQuote uses offline-first technology to store quotes locally on your phone when there's no signal. Quotes auto-sync when you reconnect. Tradify requires an internet connection to function.",
+          text: "Yes. QuoteTalk uses offline-first technology to store quotes locally on your phone when there's no signal. Quotes auto-sync when you reconnect. Tradify requires an internet connection to function.",
         },
       },
     ],
@@ -61,65 +61,65 @@ const schemaMarkup = {
 const COMPARISON_FEATURES = [
   {
     feature: "Core focus",
-    churquote: "Voice-to-quote: fast, on-site quoting",
+    quotetalk: "Voice-to-quote: fast, on-site quoting",
     tradify: "Full job management: quotes, jobs, scheduling, invoicing",
   },
   {
     feature: "Quoting speed",
-    churquote: "60 seconds by voice",
+    quotetalk: "60 seconds by voice",
     tradify: "15–30 minutes (manual line-item entry)",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "Voice input",
-    churquote: "Yes — core feature. Understands Kiwi slang",
+    quotetalk: "Yes — core feature. Understands Kiwi slang",
     tradify: "No voice input",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "Works offline",
-    churquote: "Yes — Zero-Bar Quoting™. Auto-syncs on reconnect",
+    quotetalk: "Yes — Zero-Bar Quoting™. Auto-syncs on reconnect",
     tradify: "No — requires internet connection",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "NZ localisation",
-    churquote: "Built for NZ only: 15% GST, NZD, NZ spelling, Kiwi terminology",
+    quotetalk: "Built for NZ only: 15% GST, NZD, NZ spelling, Kiwi terminology",
     tradify: "NZ-adapted (originally Australian)",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "Learning curve",
-    churquote: "Zero — if you can send a voice message, you can use it",
+    quotetalk: "Zero — if you can send a voice message, you can use it",
     tradify: "Tradify's own free training sessions suggest a learning curve",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "Scheduling & CRM",
-    churquote: "No (quoting only)",
+    quotetalk: "No (quoting only)",
     tradify: "Yes — full job management",
     tradifyHighlight: true,
   },
   {
     feature: "Invoicing",
-    churquote: "Basic (via quote to invoice)",
+    quotetalk: "Basic (via quote to invoice)",
     tradify: "Full invoicing with Xero/MYOB integration",
     tradifyHighlight: true,
   },
   {
     feature: "Price",
-    churquote: "Free during early access",
+    quotetalk: "Free during early access",
     tradify: "From $49 NZD/month/user",
-    churquoteHighlight: true,
+    quotetalkHighlight: true,
   },
   {
     feature: "Mobile optimised",
-    churquote: "Yes — designed for one-handed, on-site use",
+    quotetalk: "Yes — designed for one-handed, on-site use",
     tradify: "Yes — mobile app available",
   },
   {
     feature: "Best for",
-    churquote: "Sole traders and small teams focused on winning more quotes",
+    quotetalk: "Sole traders and small teams focused on winning more quotes",
     tradify: "Small-to-medium trade businesses managing jobs end-to-end",
   },
 ];
@@ -144,7 +144,7 @@ export default function TradifyAlternativePage() {
               </h1>
               <p className="text-lg text-text-muted mb-6">
                 If you&apos;ve been using Tradify and found it too complex, too slow, or too expensive for
-                what you actually need — you&apos;re not alone. This page compares ChurQuote to Tradify
+                what you actually need — you&apos;re not alone. This page compares QuoteTalk to Tradify
                 honestly, so you can decide which tool is right for your business.
               </p>
               <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 text-sm mb-8">
@@ -152,7 +152,7 @@ export default function TradifyAlternativePage() {
                 <span className="text-text-muted">
                   If you need full job management (scheduling, CRM, timesheets, invoicing), Tradify is
                   a solid product. If what you actually need is to send professional quotes faster — and
-                  you don&apos;t want to spend 20 minutes in an app every time — ChurQuote is built for that.
+                  you don&apos;t want to spend 20 minutes in an app every time — QuoteTalk is built for that.
                 </span>
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
@@ -160,7 +160,7 @@ export default function TradifyAlternativePage() {
                   href="/"
                   className="inline-flex items-center justify-center px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-dark transition-colors"
                 >
-                  Try ChurQuote free →
+                  Try QuoteTalk free →
                 </Link>
                 <span className="text-sm text-text-muted self-center">
                   No credit card. No training. 60-second setup.
@@ -215,22 +215,22 @@ export default function TradifyAlternativePage() {
 
           {/* Comparison Table */}
           <section>
-            <h2 className="text-2xl font-bold text-text mb-6">ChurQuote vs Tradify — Key Differences</h2>
+            <h2 className="text-2xl font-bold text-text mb-6">QuoteTalk vs Tradify — Key Differences</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-bg">
                     <th className="text-left p-3 border border-border font-semibold text-text w-1/4">Feature</th>
-                    <th className="text-left p-3 border border-border font-semibold text-primary w-3/8">ChurQuote</th>
+                    <th className="text-left p-3 border border-border font-semibold text-primary w-3/8">QuoteTalk</th>
                     <th className="text-left p-3 border border-border font-semibold text-text-muted w-3/8">Tradify</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {COMPARISON_FEATURES.map(({ feature, churquote, tradify, churquoteHighlight, tradifyHighlight }) => (
+                  {COMPARISON_FEATURES.map(({ feature, quotetalk, tradify, quotetalkHighlight, tradifyHighlight }) => (
                     <tr key={feature} className="hover:bg-bg/50">
                       <td className="p-3 border border-border text-text font-medium">{feature}</td>
-                      <td className={`p-3 border border-border ${churquoteHighlight ? "text-secondary font-medium" : "text-text-muted"}`}>
-                        {churquote}
+                      <td className={`p-3 border border-border ${quotetalkHighlight ? "text-secondary font-medium" : "text-text-muted"}`}>
+                        {quotetalk}
                       </td>
                       <td className={`p-3 border border-border ${tradifyHighlight ? "text-secondary font-medium" : "text-text-muted"}`}>
                         {tradify}
@@ -242,16 +242,16 @@ export default function TradifyAlternativePage() {
             </div>
           </section>
 
-          {/* What ChurQuote Does Differently */}
+          {/* What QuoteTalk Does Differently */}
           <section>
-            <h2 className="text-2xl font-bold text-text mb-8">What ChurQuote Does Differently</h2>
+            <h2 className="text-2xl font-bold text-text mb-8">What QuoteTalk Does Differently</h2>
             <div className="space-y-10">
               <div>
                 <h3 className="text-xl font-semibold text-text mb-4">
                   1. Voice-First Quoting — a genuinely different approach
                 </h3>
                 <p className="text-text-muted mb-4">
-                  Tradify was designed for the office (or the van, with time to sit down). ChurQuote was
+                  Tradify was designed for the office (or the van, with time to sit down). QuoteTalk was
                   designed for the driveway, the site, the moment you&apos;ve just scoped the job and need
                   to quote before you drive away.
                 </p>
@@ -280,7 +280,7 @@ export default function TradifyAlternativePage() {
                   2. Zero-Bar Quoting™ — works without internet
                 </h3>
                 <p className="text-text-muted mb-4">
-                  Every competing quoting tool requires an internet connection. ChurQuote stores quotes
+                  Every competing quoting tool requires an internet connection. QuoteTalk stores quotes
                   locally on your phone using IndexedDB — so you can record and generate quotes even
                   with zero cell signal.
                 </p>
@@ -295,7 +295,7 @@ export default function TradifyAlternativePage() {
                   3. NZ-Only Focus
                 </h3>
                 <p className="text-text-muted mb-4">
-                  Tradify was built in Australia and adapted for NZ. ChurQuote was built from day one
+                  Tradify was built in Australia and adapted for NZ. QuoteTalk was built from day one
                   for NZ tradies only — NZD, 15% GST, NZ spelling conventions, Placemakers and Mitre 10
                   pricing integration, and AI voice recognition tuned for Kiwi accents.
                 </p>
@@ -321,7 +321,7 @@ export default function TradifyAlternativePage() {
                 </thead>
                 <tbody>
                   {[
-                    ["ChurQuote", "Free during early access", "Voice quoting, offline support, NZ GST, quote sharing", true],
+                    ["QuoteTalk", "Free during early access", "Voice quoting, offline support, NZ GST, quote sharing", true],
                     ["Tradify Starter", "$49 NZD/month/user", "Full job management, scheduling, invoicing, CRM", false],
                     ["Tradify Growth", "$69 NZD/month/user", "+ Reporting, timesheets, more integrations", false],
                     ["Fergus", "From $79 NZD/month", "Full job management, invoicing, purchase orders", false],
@@ -347,10 +347,10 @@ export default function TradifyAlternativePage() {
 
           {/* Who It's For */}
           <section>
-            <h2 className="text-2xl font-bold text-text mb-6">Who ChurQuote Is Best For</h2>
+            <h2 className="text-2xl font-bold text-text mb-6">Who QuoteTalk Is Best For</h2>
             <div className="grid md:grid-cols-2 gap-6">
               <div className="bg-white border-2 border-primary rounded-lg p-6">
-                <h3 className="font-semibold text-primary mb-4">ChurQuote is the right choice if:</h3>
+                <h3 className="font-semibold text-primary mb-4">QuoteTalk is the right choice if:</h3>
                 <ul className="space-y-2">
                   {[
                     "You're a sole trader or a team of 1–5 tradies",
@@ -385,17 +385,17 @@ export default function TradifyAlternativePage() {
               </div>
             </div>
             <p className="text-sm text-text-muted mt-4">
-              These tools solve different problems. For many sole traders, ChurQuote handles the hardest
+              These tools solve different problems. For many sole traders, QuoteTalk handles the hardest
               part of the day (quoting fast) at a fraction of the complexity and cost.
             </p>
           </section>
 
           {/* CTA */}
           <section className="bg-primary rounded-2xl p-8 text-white">
-            <h2 className="text-2xl font-bold mb-3">Try ChurQuote Free</h2>
+            <h2 className="text-2xl font-bold mb-3">Try QuoteTalk Free</h2>
             <p className="text-white/80 mb-2">No credit card. No commitment. No training sessions.</p>
             <p className="text-white/80 mb-6">
-              If you&apos;re a NZ tradie spending too long on quotes — give ChurQuote 60 seconds. That&apos;s
+              If you&apos;re a NZ tradie spending too long on quotes — give QuoteTalk 60 seconds. That&apos;s
               all it takes.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -420,20 +420,20 @@ export default function TradifyAlternativePage() {
             <div className="space-y-6">
               {[
                 {
-                  q: "Is ChurQuote a full replacement for Tradify?",
-                  a: "No. ChurQuote focuses on one thing: getting professional quotes out fast by voice. If you need full job management — scheduling, timesheets, CRM, invoicing — Tradify covers more ground. Many tradies use ChurQuote for quoting and a separate tool for invoicing.",
+                  q: "Is QuoteTalk a full replacement for Tradify?",
+                  a: "No. QuoteTalk focuses on one thing: getting professional quotes out fast by voice. If you need full job management — scheduling, timesheets, CRM, invoicing — Tradify covers more ground. Many tradies use QuoteTalk for quoting and a separate tool for invoicing.",
                 },
                 {
-                  q: "Does ChurQuote integrate with Xero?",
-                  a: "Not in the current version. ChurQuote generates quotes as PDF files you can share directly. Xero integration is on the roadmap.",
+                  q: "Does QuoteTalk integrate with Xero?",
+                  a: "Not in the current version. QuoteTalk generates quotes as PDF files you can share directly. Xero integration is on the roadmap.",
                 },
                 {
-                  q: "Can I import my Tradify client list into ChurQuote?",
+                  q: "Can I import my Tradify client list into QuoteTalk?",
                   a: "Not automatically in the current version. During early access, client details are added when you create a quote. Bulk import is planned for a future release.",
                 },
                 {
-                  q: "Does ChurQuote work on Android and iPhone?",
-                  a: "Yes — ChurQuote is a web app that works in any mobile browser (Safari on iPhone, Chrome on Android). No app store download required.",
+                  q: "Does QuoteTalk work on Android and iPhone?",
+                  a: "Yes — QuoteTalk is a web app that works in any mobile browser (Safari on iPhone, Chrome on Android). No app store download required.",
                 },
                 {
                   q: "What happens to my quotes if I cancel?",
@@ -463,7 +463,7 @@ export default function TradifyAlternativePage() {
                 href="/"
                 className="block bg-white border border-border rounded-lg p-5 hover:border-primary transition-colors"
               >
-                <p className="font-semibold text-text mb-1">Try ChurQuote free</p>
+                <p className="font-semibold text-text mb-1">Try QuoteTalk free</p>
                 <p className="text-sm text-text-muted">60-second voice quoting for NZ tradies</p>
               </Link>
             </div>

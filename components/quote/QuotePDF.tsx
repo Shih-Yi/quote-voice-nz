@@ -41,7 +41,7 @@ export function QuotePDF({ quote, showWatermark = false }: QuotePDFProps) {
       // HEADER with Custom Logo
       // ============================================
       const provider = quote.providerDetails || {};
-      const businessName = provider.businessName || "KiwiSpeakQuote";
+      const businessName = provider.businessName || "QuoteTalk";
       
       // Initials logic: Try to get first letter of first 2 words (e.g. "Bob's Plumbing" -> "BP")
       // If single word, take first 2 letters (e.g. "Kiwi" -> "KI")
@@ -271,7 +271,7 @@ export function QuotePDF({ quote, showWatermark = false }: QuotePDFProps) {
       pdf.setTextColor(...mutedColor);
       pdf.setFontSize(8);
       pdf.setFont("helvetica", "normal");
-      pdf.text("Generated with KiwiSpeakQuote", pageWidth / 2, footerY, { align: "center" });
+      pdf.text("Generated with QuoteTalk", pageWidth / 2, footerY, { align: "center" });
       pdf.text("All prices in NZD. GST rate: 15%", pageWidth / 2, footerY + 4, { align: "center" });
 
       // Watermark banner for free tier
@@ -283,7 +283,7 @@ export function QuotePDF({ quote, showWatermark = false }: QuotePDFProps) {
         pdf.setFontSize(7.5);
         pdf.setFont("helvetica", "bold");
         pdf.text(
-          "Created with ChurQuote · churquote.co.nz · Remove watermark — Upgrade to Pro",
+          "Created with QuoteTalk · quotetalk.nz · Remove watermark — Upgrade to Pro",
           pageWidth / 2,
           wmarkY + 4,
           { align: "center" }

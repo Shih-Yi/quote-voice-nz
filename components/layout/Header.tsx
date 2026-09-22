@@ -29,9 +29,9 @@ export function Header({
         <div className={`${maxWidth} mx-auto flex items-center justify-between`}>
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">KQ</span>
+              <span className="text-white font-bold text-sm">QT</span>
             </div>
-            <span className="font-semibold text-text hidden sm:inline">KiwiSpeakQuote</span>
+            <span className="font-semibold text-text hidden sm:inline">QuoteTalk</span>
           </Link>
 
           <div className="flex items-center gap-3">

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — KiwiSpeakQuote",
+  title: "Privacy Policy — QuoteTalk",
   description:
-    "How KiwiSpeakQuote collects, uses, and protects your data under the New Zealand Privacy Act 2020.",
+    "How QuoteTalk collects, uses, and protects your data under the New Zealand Privacy Act 2020.",
 };
 
 const LAST_UPDATED = "18 April 2026";
@@ -18,7 +18,7 @@ export default function PrivacyPage() {
 
         <section className="mb-8">
           <p className="text-text-muted">
-            KiwiSpeakQuote (&quot;KSQ&quot;) handles your personal information in accordance with
+            QuoteTalk handles your personal information in accordance with
             the New Zealand Privacy Act 2020. This policy explains what we collect, why, and how
             we protect it.
           </p>
@@ -131,8 +131,8 @@ export default function PrivacyPage() {
             Passwords are hashed; data in transit is encrypted via TLS; database access is
             restricted via Supabase Row-Level Security. No system is perfectly secure — please
             report concerns to{" "}
-            <a href="mailto:security@ksq.nz" className="text-primary hover:underline">
-              security@ksq.nz
+            <a href="mailto:security@quotetalk.nz" className="text-primary hover:underline">
+              security@quotetalk.nz
             </a>
             .
           </p>

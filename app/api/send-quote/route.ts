@@ -186,13 +186,13 @@ export async function POST(request: NextRequest) {
       .maybeSingle<{ business_name: string | null }>();
 
     const providerName =
-      sanitiseDisplayName(profile?.business_name) || "KiwiSpeakQuote";
+      sanitiseDisplayName(profile?.business_name) || "QuoteTalk";
     const quoteUrl = `${resolveAppOrigin(request)}/q/${quote.slug}`;
     const total = quote.total != null ? formatNZD(Number(quote.total)) : "";
     const customerName = quote.customer_name?.trim() || "there";
 
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const fromEmail = process.env.RESEND_FROM_EMAIL || "quotes@ksq.nz";
+    const fromEmail = process.env.RESEND_FROM_EMAIL || "quotes@quotetalk.nz";
 
     const { error } = await resend.emails.send({
       from: `${providerName} <${fromEmail}>`,
@@ -286,7 +286,7 @@ function buildQuoteEmailHtml(params: {
         <!-- Footer -->
         <tr><td style="padding:16px 24px;background:#F9FAFB;border-top:1px solid #E5E7EB;text-align:center;">
           <p style="color:#9CA3AF;font-size:11px;margin:0;">
-            Sent via KiwiSpeakQuote &mdash; Voice to Quote for NZ Tradies
+            Sent via QuoteTalk &mdash; Voice to Quote for NZ Tradies
           </p>
         </td></tr>
       </table>

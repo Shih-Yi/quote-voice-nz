@@ -60,7 +60,7 @@ export function QuoteShare({ quote }: QuoteShareProps) {
   const handleShare = useCallback(async () => {
     const shareData = {
       title: `Quote for ${quote.customerName}`,
-      text: `Quote from KiwiSpeakQuote - Total: $${quote.total.toFixed(2)} NZD`,
+      text: `Quote from QuoteTalk - Total: $${quote.total.toFixed(2)} NZD`,
       url: shareUrl,
     };
 

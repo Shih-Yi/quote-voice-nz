@@ -1,6 +1,6 @@
 {
-  "name": "KiwiSpeakQuote",
-  "short_name": "KSQ",
+  "name": "QuoteTalk",
+  "short_name": "QuoteTalk",
   "description": "Voice-to-Quote for NZ Tradies",
   "start_url": "/",
   "display": "standalone",

@@ -7,12 +7,12 @@ const BUILD_ID =
   process.env.NEXT_PUBLIC_BUILD_ID ??
   String(Date.now());
 
-const SW_SOURCE = `// KiwiSpeakQuote Service Worker (generated)
+const SW_SOURCE = `// QuoteTalk Service Worker (generated)
 // Build ID is injected at build time so every deploy invalidates old caches.
 
 const BUILD_ID = ${JSON.stringify(BUILD_ID)};
-const CACHE_NAME = 'ksq-shell-' + BUILD_ID;
-const DYNAMIC_CACHE = 'ksq-dynamic-' + BUILD_ID;
+const CACHE_NAME = 'quotetalk-shell-' + BUILD_ID;
+const DYNAMIC_CACHE = 'quotetalk-dynamic-' + BUILD_ID;
 
 // Only pre-cache the offline fallback. Never pre-cache real pages —
 // that forces stale HTML on next load.

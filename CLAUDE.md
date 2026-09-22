@@ -1,6 +1,6 @@
-# CLAUDE.md - Project: ChurQuote (NZ Voice-to-Quote Agent)
+# CLAUDE.md - Project: QuoteTalk (NZ Voice-to-Quote Agent)
 
-## Project Name: KiwiSpeakQuote (KSQ) Mission: To provide New Zealand tradies (plumbers, electricians, landscapers, etc.) with a "Stupid Simple" voice-to-quote solution that eliminates the friction of manual data entry in the field.
+## Project Name: QuoteTalk Mission: To provide New Zealand tradies (plumbers, electricians, landscapers, etc.) with a "Stupid Simple" voice-to-quote solution that eliminates the friction of manual data entry in the field.
 
 ## Core Value Proposition:
 

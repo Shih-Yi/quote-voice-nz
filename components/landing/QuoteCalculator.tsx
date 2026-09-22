@@ -31,7 +31,7 @@ interface CalcResults {
   annualHours: number;
   annualJobsLost: number;
   annualRevenueLost: number;
-  churquoteWeeklyMins: number;
+  quoteTalkWeeklyMins: number;
   timeSavedWeeklyHours: number;
   timeSavedAnnualHours: number;
   eveningsSaved: number;
@@ -62,8 +62,8 @@ function calculate(inputs: CalcInputs): CalcResults {
   const annualHours = weeklyHours * 52;
   const annualJobsLost = inputs.quotesPerWeek * 52 * 0.15;
   const annualRevenueLost = annualJobsLost * inputs.avgJobValue;
-  const churquoteWeeklyMins = inputs.quotesPerWeek * 1;
-  const timeSavedWeeklyHours = weeklyHours - churquoteWeeklyMins / 60;
+  const quoteTalkWeeklyMins = inputs.quotesPerWeek * 1;
+  const timeSavedWeeklyHours = weeklyHours - quoteTalkWeeklyMins / 60;
   const timeSavedAnnualHours = timeSavedWeeklyHours * 52;
   const eveningsSaved = Math.round(timeSavedAnnualHours / 3); // ~3hrs = 1 evening
 
@@ -73,7 +73,7 @@ function calculate(inputs: CalcInputs): CalcResults {
     annualHours,
     annualJobsLost,
     annualRevenueLost,
-    churquoteWeeklyMins,
+    quoteTalkWeeklyMins,
     timeSavedWeeklyHours,
     timeSavedAnnualHours,
     eveningsSaved,
@@ -170,13 +170,13 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
           </div>
         </div>
 
-        {/* With ChurQuote */}
+        {/* With QuoteTalk */}
         <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 mb-6">
-          <p className="text-sm font-semibold text-emerald-700 mb-3 uppercase tracking-wide">With ChurQuote</p>
+          <p className="text-sm font-semibold text-emerald-700 mb-3 uppercase tracking-wide">With QuoteTalk</p>
           <div className="space-y-2 text-text">
             <div className="flex justify-between">
               <span className="flex items-center gap-2"><Clock className="w-4 h-4 text-emerald-500" /> Weekly quoting time</span>
-              <span className="font-bold">{results.churquoteWeeklyMins} min</span>
+              <span className="font-bold">{results.quoteTalkWeeklyMins} min</span>
             </div>
             <div className="flex justify-between">
               <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Hours saved per year</span>
@@ -196,7 +196,7 @@ export function QuoteCalculator({ className = "" }: { className?: string }) {
             className="w-full bg-cta hover:bg-primary-dark text-white text-base py-6 rounded-xl font-semibold shadow-lg shadow-indigo-200/50"
             onClick={() => window.location.href = "/dashboard"}
           >
-            Try ChurQuote Free
+            Try QuoteTalk Free
           </Button>
           <button
             onClick={handleShare}

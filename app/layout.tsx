@@ -15,13 +15,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KiwiSpeakQuote - Voice to Quote for NZ Tradies",
+  title: "QuoteTalk - Voice to Quote for NZ Tradies",
   description: "Stupid Simple voice-to-quote solution for New Zealand tradies. Capture job details via voice, generate quotes instantly.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "KSQ",
+    title: "QuoteTalk",
   },
 };
 

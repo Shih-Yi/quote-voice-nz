@@ -1,4 +1,4 @@
--- KiwiSpeakQuote Database Schema
+-- QuoteTalk Database Schema
 -- Run this in Supabase SQL Editor
 --
 -- SECURITY NOTES:

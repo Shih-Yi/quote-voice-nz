@@ -63,15 +63,15 @@ const STATS = {
 const FAQ_ITEMS = [
   {
     q: "I\u2019m not tech savvy. Is this complicated?",
-    a: "If you can send a voice message on your phone, you can use ChurQuote. One button. Speak. Done. No training sessions, no user manuals, no 45-minute onboarding calls.",
+    a: "If you can send a voice message on your phone, you can use QuoteTalk. One button. Speak. Done. No training sessions, no user manuals, no 45-minute onboarding calls.",
   },
   {
     q: "What if AI gets the quote wrong?",
-    a: "You always review before sending. ChurQuote does the draft \u2014 you do the final check. One tap to edit, one tap to send. You\u2019re always in control.",
+    a: "You always review before sending. QuoteTalk does the draft \u2014 you do the final check. One tap to edit, one tap to send. You\u2019re always in control.",
   },
   {
     q: "I work in areas with no mobile signal.",
-    a: "That\u2019s exactly why we built offline mode. Record your quote with zero bars. ChurQuote stores it on your phone and syncs when you\u2019re back in range. Not a single quote lost.",
+    a: "That\u2019s exactly why we built offline mode. Record your quote with zero bars. QuoteTalk stores it on your phone and syncs when you\u2019re back in range. Not a single quote lost.",
   },
   {
     q: "How much does it cost?",
@@ -79,7 +79,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "I already use Tradify / Fergus. Why switch?",
-    a: "You don\u2019t have to. ChurQuote isn\u2019t trying to replace your job management system. It\u2019s the fastest way to get a quote out the door. Use it alongside what you\u2019ve got, or on its own. Your call.",
+    a: "You don\u2019t have to. QuoteTalk isn\u2019t trying to replace your job management system. It\u2019s the fastest way to get a quote out the door. Use it alongside what you\u2019ve got, or on its own. Your call.",
   },
 ];
 
@@ -154,7 +154,7 @@ function LandingPageContent() {
                 <span className="text-primary">From Your Ute.</span>
               </h1>
               <p className="text-lg md:text-xl text-text-muted max-w-lg mx-auto md:mx-0 leading-relaxed">
-                ChurQuote turns your voice into a professional, GST-calculated quote — before you&apos;ve even left the job site. No typing. No laptop. No signal needed.
+                QuoteTalk turns your voice into a professional, GST-calculated quote — before you&apos;ve even left the job site. No typing. No laptop. No signal needed.
               </p>
               <div className="pt-2">
                 <a
@@ -275,7 +275,7 @@ function LandingPageContent() {
         {/* How It Works — The Mechanism */}
         <section className="py-24 md:py-28 px-4 max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-text">How ChurQuote Works</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-text">How QuoteTalk Works</h2>
             <p className="text-lg text-text-muted mt-4">Three steps. Sixty seconds. Done.</p>
           </div>
 
@@ -298,7 +298,7 @@ function LandingPageContent() {
               </div>
               <h3 className="text-xl font-bold">2. AI Does the Maths</h3>
               <p className="text-text-muted leading-relaxed">
-                ChurQuote understands Kiwi — the slang, the accent, the lot. It calculates 15% GST and formats everything into a clean, professional quote with your business name and logo.
+                QuoteTalk understands Kiwi — the slang, the accent, the lot. It calculates 15% GST and formats everything into a clean, professional quote with your business name and logo.
               </p>
             </div>
 
@@ -325,7 +325,7 @@ function LandingPageContent() {
         <section className="bg-bg py-20 md:py-28 px-4">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-3xl md:text-4xl font-bold text-text text-center mb-14">
-              Why Tradies Are Switching to ChurQuote
+              Why Tradies Are Switching to QuoteTalk
             </h2>
             <div className="space-y-8">
               {[
@@ -342,12 +342,12 @@ function LandingPageContent() {
                 {
                   icon: <ShoppingCart className="w-6 h-6" />,
                   title: "Placemakers & Mitre 10 prices, built in",
-                  desc: "No more guessing material costs or looking up price lists. ChurQuote pulls current pricing so your quotes are accurate from the start.",
+                  desc: "No more guessing material costs or looking up price lists. QuoteTalk pulls current pricing so your quotes are accurate from the start.",
                 },
                 {
                   icon: <Languages className="w-6 h-6" />,
                   title: "Speaks fluent Kiwi",
-                  desc: "\"Two grand for the cylinder.\" \"About four hours' labour.\" \"Chuck in the call-out fee.\" ChurQuote gets it — the slang, the accent, all of it. GST calculated at 15%, every time.",
+                  desc: "\"Two grand for the cylinder.\" \"About four hours' labour.\" \"Chuck in the call-out fee.\" QuoteTalk gets it — the slang, the accent, all of it. GST calculated at 15%, every time.",
                 },
                 {
                   icon: <RefreshCw className="w-6 h-6" />,

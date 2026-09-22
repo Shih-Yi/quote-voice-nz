@@ -172,7 +172,7 @@ export default function PricingPage() {
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">3 email sends / month</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">3 item templates</span></div>
                 <div className="flex items-center gap-2"><CheckIcon /><span className="text-sm">Offline-first (IndexedDB)</span></div>
-                <div className="flex items-center gap-2"><CrossIcon /><span className="text-sm text-text-muted">ChurQuote watermark on quotes</span></div>
+                <div className="flex items-center gap-2"><CrossIcon /><span className="text-sm text-text-muted">QuoteTalk watermark on quotes</span></div>
               </div>
               <Button
                 variant="outline"

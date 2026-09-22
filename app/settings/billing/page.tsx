@@ -146,7 +146,7 @@ function BillingContent() {
           <Card>
             <CardHeader>
               <CardTitle>Current Plan</CardTitle>
-              <CardDescription>Your active ChurQuote subscription.</CardDescription>
+              <CardDescription>Your active QuoteTalk subscription.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
@@ -245,7 +245,7 @@ function BillingContent() {
                 <ul className="text-sm text-text space-y-1.5">
                   {[
                     "200 voice quotes per month (currently 5/mo)",
-                    "No ChurQuote watermark on quotes & PDFs",
+                    "No QuoteTalk watermark on quotes & PDFs",
                     "50 email sends per month",
                     "50 item templates",
                     "Full revenue dashboard & CSV export",
@@ -270,7 +270,7 @@ function BillingContent() {
           <p className="text-xs text-text-muted text-center">
             All prices in NZD incl. GST. Payments processed securely by Stripe.{" "}
             <a
-              href="mailto:support@churquote.co.nz"
+              href="mailto:support@quotetalk.nz"
               className="underline hover:text-primary"
             >
               Contact support

@@ -176,7 +176,7 @@ describe("POST /api/send-quote", () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
 
     const payload = mockSend.mock.calls[0][0];
-    expect(payload.from).toBe("Kiwi Plumbing Ltd <quotes@ksq.nz>");
+    expect(payload.from).toBe("Kiwi Plumbing Ltd <quotes@quotetalk.nz>");
     expect(payload.from).not.toContain("ANZ");
     expect(payload.to).toEqual(["jane@example.co.nz"]);
     expect(payload.html).toContain("https://ksq.nz/q/abc12345");
@@ -215,7 +215,7 @@ describe("POST /api/send-quote", () => {
     expect(from).not.toContain("\r");
     // Colons and angle brackets go too, so nothing in the display name can be
     // read as a header name or as a second address.
-    expect(from).toBe("Bob Bcc victim@example.com evil@attacker.test <quotes@ksq.nz>");
+    expect(from).toBe("Bob Bcc victim@example.com evil@attacker.test <quotes@quotetalk.nz>");
   });
 
   it("does not charge a credit when sending fails", async () => {
