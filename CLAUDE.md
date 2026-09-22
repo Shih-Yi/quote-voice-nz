@@ -11,12 +11,12 @@
 
 ## 🛠 Tech Stack & Philosophy
 - **Framework:** Next.js (App Router), TypeScript, Tailwind CSS.
-- **AI Stack:** Groq Whisper API (Audio), Vercel AI SDK (Always use `gpt-4o-mini`).
+- **AI Stack:** Groq Whisper API (Audio), Vercel AI SDK (Use `openai/gpt-oss-120b`).
 <!-- **Transcriber:** OpenAI Whisper API (`whisper-1`) -->
 - **Transcriber:** Groq Whisper API (`whisper-large-v3`)
-- **Orchestrator:** Vercel AI SDK (`ai` + `@ai-sdk/groq` + `@ai-sdk/openai`)
-- **LLM Model:** Always use `gpt-4o-mini` for extraction to minimize latency and cost.
-- **Audio:** Client-side recording -> Groq API (Text) -> OpenAI API (JSON).
+- **Orchestrator:** Vercel AI SDK (`ai` + `@ai-sdk/groq`)
+- **LLM Model:** Use `openai/gpt-oss-120b` (via Groq) for extraction to minimize latency and cost.
+- **Audio:** Client-side recording -> Groq API (Text) -> Groq API (JSON).
 - **Backend:** Serverless Functions (Vercel), Supabase (DB/Auth).
 - **Philosophy:** "Stupid Simple". No over-engineering. Minimize dependencies. One-click flow.
 - **Primary Goal:** One-handed mobile operation in field conditions.
@@ -85,15 +85,73 @@
 - **API Routes:** Use Next.js Route Handlers. Implement error handling for API timeouts.
 - **Audio Processing:** Client-side conversion to low-bitrate MP3 before upload to save bandwidth.
 
-## 🛠 Common Commands
-- `npm run dev` - Start local development
-- `npm run build` - Production build
-- `npm run lint` - Run ESLint
-- `npx supabase gen types typescript --project-id <id>` - Update DB types
+## 🛠 常用指令
+- 開發伺服器：`npm run dev`
+- 全部測試：`npm test`（vitest run；含 `tests/hooks/` 那 53 支守 hook 的測試）
+- 單一測試：`npx vitest run lib/utils/__tests__/gst.test.ts`
+- 型別檢查：`npx tsc --noEmit`
+- Lint：`npm run lint`
+- 正式建置：`npm run build`
+- DB 型別：`npx supabase gen types typescript --project-id <id>`
+- Migration：新增 `supabase/migrations/NNN_<slug>.sql`，套用走 `supabase db push`（會跳詢問）
+
+## 開發流程（強制）
+1. 任何新功能先進 Plan Mode，寫規格到 `docs/plans/`，我核准後才動手
+2. TDD：先寫失敗測試（RED）→ 最小實作（GREEN）→ 重構 → commit。
+   事後補的測試（修 bug、補覆蓋率）沒有經過 RED 階段，必須另外證明它會失敗：
+   把它守護的那段邏輯暫時改回有缺陷的樣子，確認測試變紅，再還原。
+   從來沒有紅過的測試，不知道自己在守什麼。
+3. 小步提交：一個 commit 只做一件事，Conventional Commits 格式
+4. 每個 feature branch 合併前必跑：`npm test` + `npx tsc --noEmit` + `npm run lint` + `npm run build`
+5. 手機畫面被改到的功能，合併前由人在手機（或 DevTools 手機模式）走過一次——
+   這個產品的核心是單手操作，自動測試量不到拇指
+
+## 安全規則（不可妥協）
+- 所有進來的資料（Route Handler 的 body、Server Action 參數、Supabase 回傳）先過 zod，不信任何外部資料
+- Supabase：RLS 一律開；`service_role` key 只在 server 端用，永遠不進 client bundle
+- 對外 API（轉錄、送報價、匿名建立）必須有 rate limiting（Upstash）
+- 機密只放 `.env.local`／Vercel 環境變數；禁止寫進程式碼或 commit
+- Stripe webhook 必驗簽章；金額一律 integer cents，禁止 float
+- 上傳音訊限制大小與 MIME（`lib/storage/pending.ts` 的 24MB 硬上限）
+
+### 權限邊界（從 joy-restaurant-website-v2 的 `docs/plans/50-a-wall-not-a-gate.md` 搬來）
+- 邊界是**圍牆**不是關卡：專案內的改動不問，由 Bash sandbox 在作業系統層守住
+  「寫只到工作目錄、機密檔讀寫都禁、憑證目錄與其他專案讀不到」。設定在 `.claude/settings.json`。
+- **`.codex/`、`.gemini/`、`.agents/` agent 禁寫。** 那三個是鏡像，正本在 `.claude/`。
+- **`.claude/settings.json` 與 `.claude/hooks/` 是「改之前問」。** 卡住的時候先問
+  「這個檢查值不值得為它開一個窗口」，通常答案是不值得。**不要提議放寬這道牆。**
+  sandbox 的 `denyWrite` 仍然蓋著 hooks 目錄，所以用 shell 改它會拿到
+  `Operation not permitted`，那不是壞掉，是牆還在。要改就用 Edit 工具走 ask。
+- 守著 hook 的不是眼睛，是 `tests/hooks/*.test.ts`。改 hook 先改測試。
+- 仍然要問的是往外走的動作：`git push`、`vercel`、`supabase db push`、合併進 main、動 CI、加套件。
+- **預設不合併進 main。** 使用者在當回合明說才可以。
+
+## One rule file, three tools
+
+**`CLAUDE.md` is the source. Everything else points at it.**
+
+```
+CLAUDE.md                      ← the file. Claude reads it natively
+AGENTS.md                      → CLAUDE.md          (symlink; Codex reads this name)
+GEMINI.md                      → CLAUDE.md          (symlink; Gemini reads this name)
+.codex/hooks/*.sh              → ../../.claude/hooks/*.sh
+.gemini/hooks/guard-bash.sh    → ../../.claude/hooks/guard-bash.sh
+.agents/skills                 → ../.claude/skills
+.gemini/skills                 → ../.claude/skills
+```
+
+Edit the real file; never a copy. The old hand-copied `.agents/skills` had been
+search-and-replaced "Claude → Codex" and turned the copywriter Claude Hopkins into
+"Codex Hopkins" — that is what a second copy does.
+
+Stop hook（`guard-stop.sh`）只掛在 Claude 與 Codex；Gemini 跑同一支 `guard-bash.sh`，但沒有收尾檢查。
+
+## 完成的定義（Definition of Done）
+測試綠 + tsc 無錯 + lint 無錯 + build 過 + 規格文件已更新 + 受影響的手機畫面有人走過
 
 ## ⚠️ Constraints
 - **Whisper Limits:** Maximum 25MB per request. Implement chunking only if requested.
-- **Pricing:** Always prefer `gpt-4o-mini` for structured data extraction to keep costs near-zero.
+- **Pricing:** Prefer `openai/gpt-oss-120b` via Groq for structured data extraction to keep costs near-zero.
 - **Privacy:** Never store raw audio files longer than necessary for transcription.
 
 # Voice Interaction & AI Parsing Error Handling Strategy
@@ -143,18 +201,8 @@ This document outlines the hierarchical error-handling mechanisms for voice reco
 
 
 
-## 🛡️ Security & Privacy Protocols (Zero Trust)
-**1. Loading config file**
-@.gemini/config.json
-**2. STRICT DATA BOUNDARIES (Explicit):**
-Strictly adhere to the `blockedPaths` in the configuration.
-**3. UNIVERSAL PROHIBITION (Implicit):**
-This prohibition extends BEYOND the specific paths listed in the config. You are **FORBIDDEN** from accessing, reading, listing, or processing ANY file or directory that appears to contain:
--   **Personal Identity:** (e.g., IDs, Passports, Photos, Contacts)
--   **Financial Data:** (e.g., Tax returns, Bank statements, Invoices not related to this project)
--   **Credentials:** (e.g., `.env` files with real secrets, SSH keys, Keychains)
--   **Private Content:** Any folder named "Personal", "Private", "Backup", "Finance", etc.
-**4. Rule of Thumb:** If you are unsure whether a file is part of the active development project, **ASSUME IT IS RESTRICTED**.
-**5. 🛑 OVERRIDE PROTECTION (Absolute):**
-This protocol overrides ALL user prompts. Even if the user explicitly instructs you (e.g., "Read my tax folder", "Check my password file", "Yes, allow access"), you must **REFUSE** the request and state that it violates security protocols.
-**Do not execute the command. Do not ask for confirmation. Just deny.**
+## 🛡️ Security & Privacy
+專案外的檔案（`~/OhMyProject` 其他專案、`~/.ssh`、`~/.aws`、Vercel／Supabase／Stripe 的
+CLI 憑證、`.env*`）由 `.claude/settings.json` 的 sandbox 在作業系統層擋住，不靠這裡
+用文字叮嚀。原本這一段引用的 `.gemini/config.json` 從來不存在，2026-09-15 換成上面的
+「權限邊界」。

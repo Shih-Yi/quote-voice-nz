@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateObject } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { groq } from "@ai-sdk/groq";
 import { extractionSchema } from "@/lib/schemas/quote";
 import { rateLimit } from "@/lib/rateLimit";
 import { captureError } from "@/lib/sentry";
@@ -72,10 +72,10 @@ export async function POST(request: NextRequest) {
   const deviceToken = request.headers?.get?.("x-device-token") ?? null;
 
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY is not set");
+    if (!process.env.GROQ_API_KEY) {
+      console.error("GROQ_API_KEY is not set");
       return NextResponse.json(
-        { error: "Server configuration error: Missing OpenAI API key" },
+        { error: "Server configuration error: Missing Groq API key" },
         { status: 500 }
       );
     }
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model: groq("openai/gpt-oss-120b"),
       schema: extractionSchema,
       system: SYSTEM_PROMPT,
       prompt: `Extract quote information from this transcribed voice recording:\n\n"${text}"`,
