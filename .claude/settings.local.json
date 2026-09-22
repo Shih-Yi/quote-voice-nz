@@ -37,7 +37,8 @@
       "Bash(python3)",
       "Bash(rm \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/components/landing/WaitlistForm.tsx\")",
       "Bash(rm \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/api/waitlist/route.ts\")",
-      "Bash(rmdir \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/api/waitlist\")"
+      "Bash(rmdir \"/Users/sychien/OhMyProject/AI Cladue project/quote-voice-nz/app/api/waitlist\")",
+      "Bash(python3 -)"
     ]
   }
 }

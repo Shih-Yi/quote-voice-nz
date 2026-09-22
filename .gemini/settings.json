@@ -1,1 +1,18 @@
-{}
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "guard-bash",
+            "description": "擋下破壞性指令；合併進 main 請在終端機自己來（見 CLAUDE.md）",
+            "command": ".gemini/hooks/guard-bash.sh",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}
