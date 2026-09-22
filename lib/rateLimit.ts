@@ -63,12 +63,33 @@ function checkMemory(
 // ---------------------------------------------------------------------------
 
 const upstashLimiters = new Map<string, Ratelimit>();
+let upstashDisabledUntil = 0;
+const UPSTASH_COOLDOWN_MS = 30_000;
+
+function isUpstashAvailable(): boolean {
+  return Date.now() >= upstashDisabledUntil;
+}
+
+function handleUpstashFailure(error: unknown) {
+  upstashDisabledUntil = Date.now() + UPSTASH_COOLDOWN_MS;
+  console.warn(
+    `[rateLimit] Upstash Redis call failed; falling back to in-memory limiter for 30s. Reason:`,
+    error instanceof Error ? error.message : String(error)
+  );
+}
 
 function getUpstashClient(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
-  return new Redis({ url, token });
+  return new Redis({
+    url,
+    token,
+    retry: {
+      retries: 1,
+      backoff: () => 50,
+    },
+  });
 }
 
 function getUpstashLimiter(
@@ -90,6 +111,26 @@ function getUpstashLimiter(
   });
   upstashLimiters.set(key, limiter);
   return limiter;
+}
+
+async function evaluateLimit(
+  limiter: Ratelimit | null,
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<{ allowed: boolean; retryAfter: number }> {
+  if (limiter && isUpstashAvailable()) {
+    try {
+      const result = await limiter.limit(key);
+      return {
+        allowed: result.success,
+        retryAfter: Math.max(0, Math.ceil((result.reset - Date.now()) / 1000)),
+      };
+    } catch (error) {
+      handleUpstashFailure(error);
+    }
+  }
+  return checkMemory(key, limit, windowSeconds);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,19 +162,12 @@ export async function rateLimit(
   const key = `${ip}:${pathname}`;
 
   const limiter = getUpstashLimiter(limit, windowSeconds);
-
-  let allowed: boolean;
-  let retryAfter: number;
-
-  if (limiter) {
-    const result = await limiter.limit(key);
-    allowed = result.success;
-    retryAfter = Math.max(0, Math.ceil((result.reset - Date.now()) / 1000));
-  } else {
-    const result = checkMemory(key, limit, windowSeconds);
-    allowed = result.allowed;
-    retryAfter = result.retryAfter;
-  }
+  const { allowed, retryAfter } = await evaluateLimit(
+    limiter,
+    key,
+    limit,
+    windowSeconds
+  );
 
   if (allowed) return null;
 
@@ -161,19 +195,12 @@ export async function globalIpRateLimit(
   const key = `global:${ip}`;
 
   const limiter = getUpstashLimiter(limit, windowSeconds);
-
-  let allowed: boolean;
-  let retryAfter: number;
-
-  if (limiter) {
-    const result = await limiter.limit(key);
-    allowed = result.success;
-    retryAfter = Math.max(0, Math.ceil((result.reset - Date.now()) / 1000));
-  } else {
-    const result = checkMemory(key, limit, windowSeconds);
-    allowed = result.allowed;
-    retryAfter = result.retryAfter;
-  }
+  const { allowed, retryAfter } = await evaluateLimit(
+    limiter,
+    key,
+    limit,
+    windowSeconds
+  );
 
   if (allowed) return null;
 
@@ -191,4 +218,8 @@ export async function globalIpRateLimit(
 export const __testing = {
   clearMemory: () => memoryStore.clear(),
   clearUpstashCache: () => upstashLimiters.clear(),
+  resetCircuitBreaker: () => {
+    upstashDisabledUntil = 0;
+  },
+  isUpstashAvailable: () => isUpstashAvailable(),
 };

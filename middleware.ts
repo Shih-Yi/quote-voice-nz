@@ -25,7 +25,12 @@ async function enforceApiRateLimit(
 ): Promise<NextResponse | null> {
   // Coarse first line of defence: 120 requests/min per IP across all API.
   // Tighter per-route limits still apply inside each route handler.
-  return globalIpRateLimit(request, { limit: 120, windowSeconds: 60 });
+  try {
+    return await globalIpRateLimit(request, { limit: 120, windowSeconds: 60 });
+  } catch (error) {
+    console.error("[middleware] Rate limiting unexpected error:", error);
+    return null;
+  }
 }
 
 async function enforceAuthRedirect(

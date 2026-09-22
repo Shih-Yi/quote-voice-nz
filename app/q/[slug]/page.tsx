@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, use } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -232,9 +233,9 @@ export default function PublicQuotePage({ params }: PageProps) {
         <div className={`mt-8 text-center text-sm text-text-muted ${quote.showWatermark ? "pb-24" : "pb-8"}`}>
           <p>Generated with KiwiSpeakQuote</p>
           <p className="mt-1">
-            <a href="/" className="text-primary hover:text-primary-dark">
+            <Link href="/" className="text-primary hover:text-primary-dark">
               Create your own quotes
-            </a>
+            </Link>
           </p>
         </div>
       </div>

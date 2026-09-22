@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import {
   Mic,
   CheckCircle2,
@@ -111,28 +111,23 @@ function LandingPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading, signUp, signIn, signInGoogle } = useAuth();
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [defaultTab, setDefaultTab] = useState<"login" | "register">("login");
+  // The modal is derived from the URL (?auth=login|register) rather than
+  // copied into state in an effect. Closing it records which param was
+  // dismissed so it stays closed until the URL is cleaned up.
+  const authParam = searchParams.get("auth");
+  const urlTab: "login" | "register" | null =
+    authParam === "register" || authParam === "login" ? authParam : null;
+  const [dismissedParam, setDismissedParam] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (loading) return; // wait for auth state to resolve
-    if (user) return;    // already logged in — don't open modal
-    const authParam = searchParams.get("auth");
-    if (authParam === "register") {
-      setDefaultTab("register");
-      setShowAuthModal(true);
-    } else if (authParam === "login") {
-      setDefaultTab("login");
-      setShowAuthModal(true);
-    }
-  }, [searchParams, user, loading]);
+  const showAuthModal =
+    !loading && !user && urlTab !== null && dismissedParam !== authParam;
+  const defaultTab = urlTab ?? "login";
 
   // Clean URL when modal closes
   const handleOpenChange = (open: boolean) => {
-    setShowAuthModal(open);
-    if (!open) {
-      router.replace("/", { scroll: false });
-    }
+    if (open) return;
+    setDismissedParam(authParam);
+    router.replace("/", { scroll: false });
   };
 
   return (

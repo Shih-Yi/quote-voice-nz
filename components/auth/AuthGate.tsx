@@ -40,10 +40,12 @@ export function AuthGate() {
     if (!autoSyncOnLoginRef.current) return;
 
     autoSyncOnLoginRef.current = false;
-    setShowAuthModal(false);
 
     (async () => {
       const { successCount, failCount, lastError } = await syncAll();
+      // The modal already hides once `user` is set (see `open` below); this
+      // resets the flag so it does not reopen on a later sign-out.
+      setShowAuthModal(false);
       await refreshPending();
       emit(KSQ_EVENTS.PENDING_SYNCED, { successCount, failCount });
 
@@ -59,7 +61,7 @@ export function AuthGate() {
 
   return (
     <AuthModal
-      open={showAuthModal}
+      open={showAuthModal && !user}
       onOpenChange={(open) => {
         setShowAuthModal(open);
         if (!open) autoSyncOnLoginRef.current = false;

@@ -58,7 +58,7 @@ export function ItemTemplates({ onSelect }: ItemTemplatesProps) {
     setNewPrice("");
     setIsAdding(false);
     toast.success("Template saved");
-  }, [newDesc, newPrice]);
+  }, [newDesc, newPrice, templates.length, limits.templates]);
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteTemplate(id);

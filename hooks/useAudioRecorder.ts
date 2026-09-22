@@ -164,7 +164,9 @@ export function useAudioRecorder(): UseAudioRecorderResult {
   }, [isRecording, stopTimer, triggerHaptic]);
 
   // Keep ref in sync so startTimer's interval always calls the latest version
-  stopRecordingRef.current = stopRecording;
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
 
   const pauseRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording && !isPaused) {

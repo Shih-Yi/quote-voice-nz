@@ -132,6 +132,7 @@ describe("Upstash client selection", () => {
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     __testing.clearUpstashCache();
     __testing.clearMemory();
+    __testing.resetCircuitBreaker();
   });
 
   it("uses in-memory fallback when env vars are absent", async () => {
@@ -145,4 +146,74 @@ describe("Upstash client selection", () => {
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(50);
   });
+
+  it("gracefully falls back to in-memory rate limiter when Upstash throws fetch failed", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://handy-husky-102498.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "fake-token";
+    __testing.clearUpstashCache();
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("fetch failed"));
+
+    const req = mockRequest("8.8.8.8", "/api/quotes/bind");
+
+    // Should not throw, should use in-memory fallback
+    const res1 = await rateLimit(req, { limit: 1, windowSeconds: 60 });
+    expect(res1).toBeNull();
+
+    // Second request within window should be rate-limited by in-memory store
+    const res2 = await rateLimit(req, { limit: 1, windowSeconds: 60 });
+    expect(res2).not.toBeNull();
+    expect(res2!.status).toBe(429);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("skips contacting Upstash while circuit breaker is cooling down", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://handy-husky-102498.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "fake-token";
+    __testing.clearUpstashCache();
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("fetch failed"));
+
+    const req = mockRequest("6.6.6.6", "/api/test");
+
+    // First call fails and trips the circuit breaker
+    await rateLimit(req, { limit: 5, windowSeconds: 60 });
+    expect(fetchSpy).toHaveBeenCalled();
+    const callsAfterFirst = fetchSpy.mock.calls.length;
+
+    // Subsequent calls during cooldown should not call fetch at all
+    await rateLimit(req, { limit: 5, windowSeconds: 60 });
+    expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst);
+    expect(__testing.isUpstashAvailable()).toBe(false);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("gracefully falls back in globalIpRateLimit when Upstash throws fetch failed", async () => {
+    process.env.UPSTASH_REDIS_REST_URL = "https://handy-husky-102498.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "fake-token";
+    __testing.clearUpstashCache();
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("fetch failed"));
+
+    const req = mockRequest("8.8.8.9", "/api/transcribe");
+
+    const res1 = await globalIpRateLimit(req, { limit: 1, windowSeconds: 60 });
+    expect(res1).toBeNull();
+
+    const res2 = await globalIpRateLimit(req, { limit: 1, windowSeconds: 60 });
+    expect(res2).not.toBeNull();
+    expect(res2!.status).toBe(429);
+
+    fetchSpy.mockRestore();
+  });
 });
+
+
